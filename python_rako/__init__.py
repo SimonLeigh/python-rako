@@ -52,10 +52,7 @@ async def discover_bridge() -> BridgeDescription:
 
 
 def main() -> None:
-    loop = asyncio.get_event_loop()
-    bridge_desc: BridgeDescription = loop.run_until_complete(
-        asyncio.gather(discover_bridge())
-    )[0]
+    bridge_desc: BridgeDescription = asyncio.run(discover_bridge())
     print(bridge_desc)
 
 

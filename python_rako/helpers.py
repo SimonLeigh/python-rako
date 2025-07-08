@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import asynccontextmanager
-from typing import AsyncIterator, Dict, List
+from typing import AsyncIterator
 
 import asyncio_dgram
 from asyncio_dgram.aio import DatagramClient, DatagramServer
@@ -55,7 +55,7 @@ async def get_dg_commander(host: str, port: int) -> AsyncIterator[DatagramClient
 
 
 def deserialise_byte_list(
-    byte_list: List[int],
+    byte_list: list[int],
 ) -> UnsupportedMessage | EOFResponse | StatusMessage | SceneCache | LevelCache:
     try:
         message_type = MessageType(byte_list[0])
@@ -84,7 +84,7 @@ def deserialise_byte_list(
     return UnsupportedMessage()
 
 
-def deserialise_status_message(byte_list: List[int]) -> StatusMessage:
+def deserialise_status_message(byte_list: list[int]) -> StatusMessage:
     data_length = byte_list[1] - 5
     room = byte_list[2] * 256 + byte_list[3]
     channel = byte_list[4]
@@ -110,8 +110,8 @@ def deserialise_status_message(byte_list: List[int]) -> StatusMessage:
     )
 
 
-def deserialise_level_cache_message(byte_list: List[int]) -> LevelCache:
-    scene_cache: Dict[RoomChannel, LevelCacheItem] = {}
+def deserialise_level_cache_message(byte_list: list[int]) -> LevelCache:
+    scene_cache: dict[RoomChannel, LevelCacheItem] = {}
     it = iter(byte_list)
     next(it)  # message type
     for b in it:
@@ -124,7 +124,7 @@ def deserialise_level_cache_message(byte_list: List[int]) -> LevelCache:
     return LevelCache(scene_cache)
 
 
-def deserialise_scene_cache_message(byte_list: List[int]) -> SceneCache:
+def deserialise_scene_cache_message(byte_list: list[int]) -> SceneCache:
     scene_cache = SceneCache()
     it = iter(byte_list)
     next(it)  # message type
@@ -137,12 +137,12 @@ def deserialise_scene_cache_message(byte_list: List[int]) -> SceneCache:
     return scene_cache
 
 
-def calc_crc(byte_list: List[int]) -> int:
+def calc_crc(byte_list: list[int]) -> int:
     return 256 - sum(byte_list) % 256
 
 
-def command_to_byte_list(command: CommandUDP) -> List[int]:
-    checksum_list: List[int] = [
+def command_to_byte_list(command: CommandUDP) -> list[int]:
+    checksum_list: list[int] = [
         5 + len(command.data),  # following bytes
         int(command.room / 256),  # high room number
         command.room % 256,  # low room number
@@ -150,7 +150,7 @@ def command_to_byte_list(command: CommandUDP) -> List[int]:
         command.command.value,  # command
     ] + command.data
 
-    byte_list: List[int] = (
+    byte_list: list[int] = (
         [
             command.message_type.value,
         ]

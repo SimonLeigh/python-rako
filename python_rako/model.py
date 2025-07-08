@@ -1,5 +1,5 @@
 from dataclasses import dataclass
-from typing import Dict, Iterable, List, Tuple
+from typing import Iterable
 
 from python_rako.const import CommandType, MessageType
 
@@ -63,11 +63,11 @@ class LevelCacheItem:
     active_deleted_reserved: int
     room: int
     channel: int
-    scene_levels: Dict[int, int]  # scene, level
+    scene_levels: dict[int, int]  # scene, level
 
 
 # pylint: disable=E1101
-class LevelCache(Dict[RoomChannel, LevelCacheItem]):
+class LevelCache(dict[RoomChannel, LevelCacheItem]):
     """dict of: RoomChannel, LevelCacheItem"""
 
     def get_channel_level(self, room_channel: RoomChannel, scene: int) -> int:
@@ -76,14 +76,14 @@ class LevelCache(Dict[RoomChannel, LevelCacheItem]):
             return level_cache_item.scene_levels.get(scene, 0)
         return 0
 
-    def get_channel_levels(self, room: int, scene: int) -> Iterable[Tuple[int, int]]:
+    def get_channel_levels(self, room: int, scene: int) -> Iterable[tuple[int, int]]:
         for lci in self.values():
             if lci.room == room:
                 brightness = lci.scene_levels.get(scene, 0)
                 yield lci.channel, brightness
 
 
-class SceneCache(Dict[int, int]):
+class SceneCache(dict[int, int]):
     """dict of: room id, scene number"""
 
     pass
@@ -111,7 +111,7 @@ class CommandUDP:
     room: int
     channel: int
     command: CommandType
-    data: List[int]
+    data: list[int]
     message_type: MessageType = MessageType.REQUEST
 
 
@@ -120,7 +120,7 @@ class CommandHTTP:
     room: int
     channel: int
 
-    def as_params(self) -> Dict[str, int]:
+    def as_params(self) -> dict[str, int]:
         raise NotImplementedError()
 
 
@@ -128,7 +128,7 @@ class CommandHTTP:
 class CommandSceneHTTP(CommandHTTP):
     scene: int
 
-    def as_params(self) -> Dict[str, int]:
+    def as_params(self) -> dict[str, int]:
         return {
             "room": self.room,
             "ch": self.channel,
@@ -140,7 +140,7 @@ class CommandSceneHTTP(CommandHTTP):
 class CommandLevelHTTP(CommandHTTP):
     level: int
 
-    def as_params(self) -> Dict[str, int]:
+    def as_params(self) -> dict[str, int]:
         return {
             "room": self.room,
             "ch": self.channel,

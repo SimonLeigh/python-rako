@@ -193,7 +193,7 @@ class Bridge:
 
     @staticmethod
     def get_lights_from_discovery_xml(xml: str) -> Generator[Light, None, None]:
-        xml_dict = xmltodict.parse(xml)
+        xml_dict = xmltodict.parse(xml, force_list={'Room'})
         for room in xml_dict["rako"]["rooms"]["Room"]:
             room_id = int(room["@id"])
             room_type = room.get("Type", "Lights")

@@ -9,7 +9,7 @@ from python_rako.model import (
 
 
 def test_get_lights_from_discovery_xml(rako_xml):
-    lights = Bridge.get_lights_from_discovery_xml(rako_xml)
+    lights = list(Bridge.get_devices_from_discovery_xml(rako_xml, "Lights"))
 
     expected_lights = [
         RoomLight(room_id=5, room_title="Living Room", channel_id=0),
@@ -87,7 +87,7 @@ def test_get_bridge_info_from_discovery_xml2(rako_xml2):
 
 
 def test_get_lights_from_discovery_xml2(rako_xml2):
-    lights = Bridge.get_lights_from_discovery_xml(rako_xml2)
+    lights = list(Bridge.get_devices_from_discovery_xml(rako_xml2, "Lights"))
 
     expected_lights = [
         RoomLight(room_id=112, room_title="Bedroom 1", channel_id=0),
@@ -145,7 +145,7 @@ def test_ventilation_command_compatibility():
 
 def test_get_all_devices_from_discovery_xml(rako_xml3):
     """Test discovering all device types from XML"""
-    all_devices = list(Bridge.get_all_devices_from_discovery_xml(rako_xml3))
+    all_devices = list(Bridge.get_devices_from_discovery_xml(rako_xml3))
 
     # Should contain both lights and ventilation
     lights = [dev for dev in all_devices if isinstance(dev, (RoomLight, ChannelLight))]
@@ -212,7 +212,7 @@ def test_get_devices_all_parameter_variants(rako_xml3):
     """Test different ways to get all devices"""
     all_devices_none = list(Bridge.get_devices_from_discovery_xml(rako_xml3, None))
     all_devices_all = list(Bridge.get_devices_from_discovery_xml(rako_xml3, "All"))
-    all_devices_method = list(Bridge.get_all_devices_from_discovery_xml(rako_xml3))
+    all_devices_method = list(Bridge.get_devices_from_discovery_xml(rako_xml3))
 
     # All should return the same devices
     assert all_devices_none == all_devices_all == all_devices_method

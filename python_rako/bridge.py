@@ -207,18 +207,6 @@ class Bridge:
         for vent in ventilation:
             yield vent
 
-    async def discover_all_devices(
-        self, session: aiohttp.ClientSession, force_refresh: bool = False
-    ) -> AsyncGenerator[
-        RoomLight | ChannelLight | RoomVentilation | ChannelVentilation
-    ]:
-        """Discover all devices by fetching XML once."""
-        lights, ventilation = await self.discover_devices(session, force_refresh)
-        for light in lights:
-            yield light
-        for vent in ventilation:
-            yield vent
-
     async def get_info(
         self, session: aiohttp.ClientSession, force_refresh: bool = False
     ) -> BridgeInfo:
@@ -249,21 +237,6 @@ class Bridge:
             passhash=config.get("passhash"),
             charset=config.get("charset"),
         )
-
-    @staticmethod
-    def get_lights_from_discovery_xml(
-        xml: str,
-    ) -> Generator[RoomLight | ChannelLight]:
-        for device in Bridge.get_devices_from_discovery_xml(xml, "Lights"):
-            if isinstance(device, (RoomLight, ChannelLight)):
-                yield device
-
-    @staticmethod
-    def get_all_devices_from_discovery_xml(
-        xml: str,
-    ) -> Generator[RoomLight | ChannelLight | RoomVentilation | ChannelVentilation]:
-        """Get all devices (lights and ventilation) from discovery XML."""
-        return Bridge.get_devices_from_discovery_xml(xml)
 
     @staticmethod
     def get_devices_from_discovery_xml(

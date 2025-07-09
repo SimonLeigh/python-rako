@@ -29,7 +29,12 @@ async def main():
 
     async with aiohttp.ClientSession() as session:
         print("\n=== Discovering ALL devices ===")
-        async for device in bridge.discover_all_devices(session):
+        # Discover lights and ventilation separately
+        async for device in bridge.discover_lights(session):
+            device_type = type(device).__name__
+            print(f"Found {device_type}: {device}")
+
+        async for device in bridge.discover_ventilation(session):
             device_type = type(device).__name__
             print(f"Found {device_type}: {device}")
 
@@ -37,7 +42,7 @@ async def main():
         rako_xml = await bridge.get_rako_xml(session)
 
         # Get all devices using static method
-        all_devices = list(Bridge.get_all_devices_from_discovery_xml(rako_xml))
+        all_devices = list(Bridge.get_devices_from_discovery_xml(rako_xml))
         print(f"Total devices found: {len(all_devices)}")
 
         # Get specific device types using list parameter

@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
-from typing import AsyncIterator
 
 import asyncio_dgram
 from asyncio_dgram.aio import DatagramClient, DatagramServer

@@ -3,20 +3,18 @@ requires = ["setuptools>=61.0", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "python-rako"
-dynamic = ["version"]
+name = "python-rako-2025"
+version = "0.1.0"
 description = "Asynchronous Python client for Rako Controls Lighting"
 readme = "README.md"
-license = {text = "MIT"}
 keywords = ["rako", "controls", "api", "async", "client"]
 authors = [
-    {name = "Ben Marengo", email = "ben@marengo.co.uk"},
+    {name = "Simon Leigh", email = "simonleigh@users.noreply.github.com"},
 ]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
@@ -35,12 +33,10 @@ dependencies = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/marengaz/python-rako"
-Repository = "https://github.com/marengaz/python-rako"
-Issues = "https://github.com/marengaz/python-rako/issues"
+Homepage = "https://github.com/simonleigh/python-rako"
+Repository = "https://github.com/simonleigh/python-rako"
+Issues = "https://github.com/simonleigh/python-rako/issues"
 
-[tool.setuptools.dynamic]
-version = {attr = "python_rako.__version__.__version__"}
 
 [tool.setuptools.packages.find]
 include = ["python_rako*"]
@@ -85,3 +81,7 @@ warn_unused_ignores = true
 warn_return_any = true
 warn_unreachable = true
 strict_equality = true
+enable_error_code = ["ignore-without-code"]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"

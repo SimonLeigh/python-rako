@@ -28,7 +28,7 @@ unsafe-load-any-extension=no
 # A comma-separated list of package or module names from where C extensions may
 # be loaded. Extensions are loading into the active Python interpreter and may
 # run arbitrary code
-extension-pkg-whitelist=
+extension-pkg-allow-list=
 
 
 [MESSAGES CONTROL]
@@ -72,7 +72,14 @@ disable=
     too-many-statements,
     unnecessary-pass,
     # handled by black
-    format
+    format,
+    # additional style preferences
+    too-many-positional-arguments,
+    use-dict-literal,
+    import-outside-toplevel,
+    unused-variable,
+    unspecified-encoding,
+    use-list-literal
 
 
 [REPORTS]
@@ -82,10 +89,7 @@ disable=
 # mypackage.mymodule.MyReporterClass.
 output-format=text
 
-# Put messages in a separate file for each module / package specified on the
-# command line instead of printing them on stdout. Reports (if any) will be
-# written in a file name "pylint_global.[txt|html]".
-files-output=no
+# files-output option is deprecated and removed
 
 # Tells whether to display a full report or only the messages
 reports=no
@@ -160,8 +164,7 @@ ignore-long-lines=^\s*(# )?<?https?://\S+>?$
 # else.
 single-line-if-stmt=no
 
-# List of optional constructs for which whitespace checking is disabled
-no-space-check=trailing-comma,dict-separator
+# no-space-check option is deprecated and removed
 
 # Maximum number of lines in a module
 max-module-lines=2000
@@ -179,8 +182,7 @@ expected-line-ending-format=
 
 [BASIC]
 
-# List of builtins function names that should not be used, separated by a comma
-bad-functions=map,filter,input
+# bad-functions option is deprecated and removed
 
 # Good variable names which should always be accepted, separated by a comma
 good-names=i,j,k,ex,Run,_
@@ -198,62 +200,52 @@ include-naming-hint=no
 # Regular expression matching correct function names
 function-rgx=[a-z_][a-z0-9_]{2,30}$
 
-# Naming hint for function names
-function-name-hint=[a-z_][a-z0-9_]{2,30}$
+# function-name-hint option is deprecated and removed
 
 # Regular expression matching correct variable names
 variable-rgx=[a-z_][a-z0-9_]{2,30}$
 
-# Naming hint for variable names
-variable-name-hint=[a-z_][a-z0-9_]{2,30}$
+# variable-name-hint option is deprecated and removed
 
 # Regular expression matching correct constant names
 const-rgx=(([A-Z_][A-Z0-9_]*)|(__.*__))$
 
-# Naming hint for constant names
-const-name-hint=(([A-Z_][A-Z0-9_]*)|(__.*__))$
+# const-name-hint option is deprecated and removed
 
 # Regular expression matching correct attribute names
 attr-rgx=[a-z_][a-z0-9_]{2,}$
 
-# Naming hint for attribute names
-attr-name-hint=[a-z_][a-z0-9_]{2,}$
+# attr-name-hint option is deprecated and removed
 
 # Regular expression matching correct argument names
 argument-rgx=[a-z_][a-z0-9_]{2,30}$
 
-# Naming hint for argument names
-argument-name-hint=[a-z_][a-z0-9_]{2,30}$
+# argument-name-hint option is deprecated and removed
 
 # Regular expression matching correct class attribute names
 class-attribute-rgx=([A-Za-z_][A-Za-z0-9_]{2,30}|(__.*__))$
 
-# Naming hint for class attribute names
-class-attribute-name-hint=([A-Za-z_][A-Za-z0-9_]{2,30}|(__.*__))$
+# class-attribute-name-hint option is deprecated and removed
 
 # Regular expression matching correct inline iteration names
 inlinevar-rgx=[A-Za-z_][A-Za-z0-9_]*$
 
-# Naming hint for inline iteration names
-inlinevar-name-hint=[A-Za-z_][A-Za-z0-9_]*$
+# inlinevar-name-hint option is deprecated and removed
 
 # Regular expression matching correct class names
 class-rgx=[A-Z_][a-zA-Z0-9]+$
 
-# Naming hint for class names
-class-name-hint=[A-Z_][a-zA-Z0-9]+$
+# class-name-hint option is deprecated and removed
 
 # Regular expression matching correct module names
 module-rgx=(([a-z_][a-z0-9_]*)|([A-Z][a-zA-Z0-9]+))$
 
-# Naming hint for module names
-module-name-hint=(([a-z_][a-z0-9_]*)|([A-Z][a-zA-Z0-9]+))$
+# module-name-hint option is deprecated and removed
 
 # Regular expression matching correct method names
 method-rgx=[a-z_][a-z0-9_]{2,}$
 
-# Naming hint for method names
-method-name-hint=[a-z_][a-z0-9_]{2,}$
+# method-name-hint option is deprecated and removed
 
 # Regular expression which should only match function or class names that do
 # not require a docstring.
@@ -381,4 +373,4 @@ int-import-graph=
 
 # Exceptions that will emit a warning when being caught. Defaults to
 # "Exception"
-overgeneral-exceptions=Exception
+overgeneral-exceptions=builtins.Exception

@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any, AsyncGenerator, Generator, Tuple
+from collections.abc import AsyncGenerator, Generator
+from typing import Any
 
 import aiohttp
 import xmltodict
@@ -24,6 +25,7 @@ from python_rako.helpers import (
 from python_rako.model import (
     BridgeInfo,
     ChannelLight,
+    ChannelVentilation,
     CommandHTTP,
     CommandLevelHTTP,
     CommandSceneHTTP,
@@ -32,7 +34,9 @@ from python_rako.model import (
     LevelCache,
     Light,
     RoomLight,
+    RoomVentilation,
     SceneCache,
+    Ventilation,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -158,10 +162,18 @@ class Bridge:
 
     async def discover_lights(
         self, session: aiohttp.ClientSession
-    ) -> AsyncGenerator[Light, None]:
+    ) -> AsyncGenerator[Light]:
         rako_xml = await self.get_rako_xml(session)
         for light in self.get_lights_from_discovery_xml(rako_xml):
             yield light
+
+    async def discover_ventilation(
+        self, session: aiohttp.ClientSession
+    ) -> AsyncGenerator[Ventilation]:
+        rako_xml = await self.get_rako_xml(session)
+        for device in self.get_devices_from_discovery_xml(rako_xml, "Ventilation"):
+            if isinstance(device, (RoomVentilation, ChannelVentilation)):
+                yield device
 
     async def get_info(self, session: aiohttp.ClientSession) -> BridgeInfo:
         try:
@@ -192,18 +204,30 @@ class Bridge:
         )
 
     @staticmethod
-    def get_lights_from_discovery_xml(xml: str) -> Generator[Light, None, None]:
-        xml_dict = xmltodict.parse(xml, force_list={'Room'})
+    def get_lights_from_discovery_xml(xml: str) -> Generator[Light]:
+        for device in Bridge.get_devices_from_discovery_xml(xml, "Lights"):
+            if isinstance(device, (RoomLight, ChannelLight)):
+                yield device
+
+    @staticmethod
+    def get_devices_from_discovery_xml(
+        xml: str, device_type: str
+    ) -> Generator[Light | Ventilation]:
+        xml_dict = xmltodict.parse(xml, force_list={"Room"})
         for room in xml_dict["rako"]["rooms"]["Room"]:
             room_id = int(room["@id"])
             room_type = room.get("Type", "Lights")
-            if room_type != "Lights":
-                _LOGGER.info(
-                    "Unsupported room type. room_id=%s room_type=%s", room_id, room_type
-                )
+            if room_type != device_type:
                 continue
             room_title = room["Title"]
-            yield RoomLight(room_id, room_title)
+
+            # Yield room-level device
+            if device_type == "Lights":
+                yield RoomLight(room_id, room_title)
+            elif device_type == "Ventilation":
+                yield RoomVentilation(room_id, room_title)
+
+            # Yield channel-level devices
             channels_section = room.get("Channel", [])
             channels = (
                 channels_section
@@ -215,14 +239,25 @@ class Bridge:
                 channel_type = channel.get("type", "Default")
                 channel_name = channel["Name"]
                 channel_levels = channel["Levels"]
-                yield ChannelLight(
-                    room_id,
-                    room_title,
-                    channel_id,
-                    channel_type,
-                    channel_name,
-                    channel_levels,
-                )
+
+                if device_type == "Lights":
+                    yield ChannelLight(
+                        room_id,
+                        room_title,
+                        channel_id,
+                        channel_type,
+                        channel_name,
+                        channel_levels,
+                    )
+                elif device_type == "Ventilation":
+                    yield ChannelVentilation(
+                        room_id,
+                        room_title,
+                        channel_id,
+                        channel_type,
+                        channel_name,
+                        channel_levels,
+                    )
 
     async def next_pushed_message(self, dg_listener: DatagramServer) -> Any | None:
         resp = await dg_listener.recv()
@@ -241,7 +276,7 @@ class Bridge:
 
     async def get_cache_state(
         self, cache_type: RequestType = RequestType.SCENE_LEVEL_CACHE
-    ) -> Tuple[LevelCache, SceneCache]:
+    ) -> tuple[LevelCache, SceneCache]:
         scene_cache = SceneCache()
         level_cache = LevelCache()
         async with get_dg_commander(self.host, self.port) as dg_client:

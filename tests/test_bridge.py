@@ -1,5 +1,11 @@
 from python_rako.bridge import Bridge
-from python_rako.model import BridgeInfo, ChannelLight, RoomLight
+from python_rako.model import (
+    BridgeInfo,
+    ChannelLight,
+    ChannelVentilation,
+    RoomLight,
+    RoomVentilation,
+)
 
 
 def test_get_lights_from_discovery_xml(rako_xml):
@@ -97,3 +103,41 @@ def test_get_lights_from_discovery_xml2(rako_xml2):
     ]
 
     assert list(lights) == expected_lights
+
+
+def test_get_ventilation_from_discovery_xml(rako_xml3):
+    ventilation_devices = Bridge.get_devices_from_discovery_xml(
+        rako_xml3, "Ventilation"
+    )
+
+    expected_ventilation = [
+        RoomVentilation(room_id=161, room_title="Fans", channel_id=0),
+        ChannelVentilation(
+            room_id=161,
+            room_title="Fans",
+            channel_id=1,
+            channel_type="switch",
+            channel_name="Fans",
+            channel_levels="FFBF7F3F000000000000000000000000",
+        ),
+    ]
+
+    ventilation_list = [
+        dev
+        for dev in ventilation_devices
+        if isinstance(dev, (RoomVentilation, ChannelVentilation))
+    ]
+    assert ventilation_list == expected_ventilation
+
+
+def test_ventilation_command_compatibility():
+    """Test that ventilation can use the same commands as lighting"""
+    from python_rako.model import CommandLevelHTTP, CommandSceneHTTP
+
+    # Test that ventilation room can use lighting commands
+    room_scene_command = CommandSceneHTTP(room=161, channel=0, scene=1)
+    assert room_scene_command.as_params() == {"room": 161, "ch": 0, "sc": 1}
+
+    # Test that ventilation channel can use lighting level commands
+    channel_level_command = CommandLevelHTTP(room=161, channel=1, level=128)
+    assert channel_level_command.as_params() == {"room": 161, "ch": 1, "lev": 128}

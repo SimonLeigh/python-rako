@@ -15,14 +15,17 @@ from python_rako.model import (  # noqa
     BridgeInfo,
     ChannelLight,
     ChannelStatusMessage,
+    ChannelVentilation,
     LevelCache,
     LevelCacheItem,
     Light,
     RoomChannel,
     RoomLight,
+    RoomVentilation,
     SceneCache,
     SceneStatusMessage,
     UnsupportedMessage,
+    Ventilation,
 )
 
 _LOGGER = logging.getLogger(__name__)

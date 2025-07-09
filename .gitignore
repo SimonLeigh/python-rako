@@ -135,3 +135,5 @@ tmp_cache
 
 .idea
 *.iml
+examples/test_xml.py
+cov.xml

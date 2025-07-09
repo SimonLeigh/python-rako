@@ -17,10 +17,11 @@ from python_rako import (
 async def test_discover_lights(udp_bridge: Bridge):
     async with aiohttp.ClientSession() as session:
         i = 0
-        async for i, light in aiostream.stream.enumerate(
+        async with aiostream.stream.enumerate(
             udp_bridge.discover_lights(session=session)
-        ):
-            assert isinstance(light, Light)
+        ).stream() as streamer:
+            async for i, light in streamer:
+                assert isinstance(light, Light)
         assert i >= 1, "no lights found"
 
 

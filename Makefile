@@ -95,8 +95,7 @@ clean-venv: ## Removes Python virtual environment artifacts.
 
 .PHONY: dist
 dist: clean ## Builds source and wheel package.
-	python setup.py sdist; \
-	python setup.py bdist_wheel; \
+	python -m build; \
 	ls -l dist;
 
 .PHONY: release

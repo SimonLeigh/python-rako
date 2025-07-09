@@ -1,5 +1,5 @@
+from collections.abc import Iterable
 from dataclasses import dataclass
-from typing import Iterable
 
 from python_rako.const import CommandType, MessageType
 
@@ -28,6 +28,29 @@ class RoomLight(Light):
 
 @dataclass
 class ChannelLight(Light):
+    channel_type: str
+    channel_name: str
+    channel_levels: str
+
+
+@dataclass
+class Ventilation:
+    room_id: int
+    room_title: str
+    channel_id: int
+
+    @property
+    def room_channel(self) -> RoomChannel:
+        return RoomChannel(self.room_id, self.channel_id)
+
+
+@dataclass
+class RoomVentilation(Ventilation):
+    channel_id: int = 0
+
+
+@dataclass
+class ChannelVentilation(Ventilation):
     channel_type: str
     channel_name: str
     channel_levels: str

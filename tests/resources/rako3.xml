@@ -1,0 +1,397 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rako>
+<info>
+<version>2.5.0 WTC</version>
+<buildDate>Sep 26 2019 16:03:54</buildDate>
+<hostName>RAKOBRIDGE     </hostName>
+<hostIP>someip</hostIP>l
+<hostMAC>somemac</hostMAC>
+<hwStatus>2F</hwStatus>
+<dbVersion>-18</dbVersion>
+</info>
+<config>
+<requirepassword></requirepassword>
+<passhash>NAN</passhash>
+<charset>UTF-8</charset>
+</config>
+<rooms>
+	<Room id="0">
+		<Type>Lights</Type>
+		<Title>House Master Controls</Title>
+	</Room>
+	<Room id="1">
+		<Type>Lights</Type>
+		<Title>Global Scenes</Title>
+		<mode>Named+OFF</mode>
+		<Scene id="1">
+			<Name>Welcome Home</Name>
+		</Scene>
+		<Scene id="2">
+			<Name>Away</Name>
+		</Scene>
+	</Room>
+	<Room id="13">
+		<Type>Lights</Type>
+		<Title>Hallway</Title>
+		<Channel id="1">
+			<type>Slider</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="65">
+		<Type>Lights</Type>
+		<Title>House Den</Title>
+		<Channel id="1">
+			<type>Slider</type>
+			<Name>Lounge Spots</Name>
+			<Levels>67000000000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>Slider</type>
+			<Name>Coridor Spots</Name>
+			<Levels>FF005DFF000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="3">
+			<type>Slider</type>
+			<Name>Pendent</Name>
+			<Levels>0058FF00000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="153">
+		<Type>Lights</Type>
+		<Title>Shoe Cupboard</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="14">
+		<Type>Lights</Type>
+		<Title>Link</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Pelmet</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>Default</type>
+			<Name>Floor Lights</Name>
+			<Levels>00BF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="3">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="5">
+		<Type>Lights</Type>
+		<Title>Barn Kitchen</Title>
+		<Channel id="1">
+			<type>switch</type>
+			<Name>Brekfast Bar Pendants</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>switch</type>
+			<Name>Spots</Name>
+			<Levels>00007F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="3">
+			<type>switch</type>
+			<Name>LED High</Name>
+			<Levels>FFFF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="4">
+			<type>Slider</type>
+			<Name>Wall Lights</Name>
+			<Levels>FF007F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="5">
+			<type>Slider</type>
+			<Name>Island LED</Name>
+			<Levels>FFFF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="6">
+		<Type>Lights</Type>
+		<Title>Barn Lounge</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>00000000000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>switch</type>
+			<Name>Wall Lights</Name>
+			<Levels>00BF00FF000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="3">
+			<type>Slider</type>
+			<Name>TV LED</Name>
+			<Levels>C0BFFF00000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="7">
+		<Type>Lights</Type>
+		<Title>Barn Dining</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Wall Lights</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>Default</type>
+			<Name>Pendants</Name>
+			<Levels>00BF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="145">
+		<Type>Lights</Type>
+		<Title>Larder</Title>
+		<Channel id="1">
+			<type>Slider</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="9">
+		<Type>Lights</Type>
+		<Title>Utility Room</Title>
+		<Channel id="1">
+			<type>switch</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>Default</type>
+			<Name>Under Cupboard LED</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="3">
+			<type>Slider</type>
+			<Name>Corridor Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="10">
+		<Type>Lights</Type>
+		<Title>Utility WC</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="17">
+		<Type>Lights</Type>
+		<Title>Master Bedroom</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Bedroom</Name>
+			<Levels>FFFF7F00000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>Default</type>
+			<Name>Corridor</Name>
+			<Levels>00007F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="18">
+		<Type>Lights</Type>
+		<Title>Master Ensuite</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="19">
+		<Type>Lights</Type>
+		<Title>Master Dressing</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FF2F7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="73">
+		<Type>Lights</Type>
+		<Title>Simon Study</Title>
+		<Channel id="1">
+			<type>Slider</type>
+			<Name>Spots</Name>
+			<Levels>FF00FFFF000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>Default</type>
+			<Name>Dress Spots</Name>
+			<Levels>FFFF0000000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="137">
+		<Type>Lights</Type>
+		<Title>Simon Ensuite</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="15">
+		<Type>Lights</Type>
+		<Title>Landing</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>Default</type>
+			<Name>Chandelier</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="89">
+		<Type>Lights</Type>
+		<Title>Lisa Study</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="113">
+		<Type>Lights</Type>
+		<Title>Lisa Sewing</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="105">
+		<Type>Lights</Type>
+		<Title>Family Bathroom</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="97">
+		<Type>Lights</Type>
+		<Title>Guest Bedroom</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="121">
+		<Type>Lights</Type>
+		<Title>Guest Ensuite</Title>
+		<Channel id="1">
+			<type>Default</type>
+			<Name>Spots</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="156">
+		<Type>Lights</Type>
+		<Title>Outside Master Controls</Title>
+		<mode>Named+OFF</mode>
+		<Scene id="1">
+			<Name>On</Name>
+		</Scene>
+	</Room>
+	<Room id="157">
+		<Type>Lights</Type>
+		<Title>Front Drive</Title>
+		<Channel id="1">
+			<type>switch</type>
+			<Name>Front Door Right Wall</Name>
+			<Levels>FF00FF00000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>Slider</type>
+			<Name>Posts</Name>
+			<Levels>FF000000000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="3">
+			<type>switch</type>
+			<Name>Front Henry's Window + Sid</Name>
+			<Levels>0000FFFF000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="5">
+			<type>switch</type>
+			<Name>Front Right Wall</Name>
+			<Levels>FFFFFF00000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="7">
+			<type>switch</type>
+			<Name>Mystery Light</Name>
+			<Levels>FFBFFF00000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="158">
+		<Type>Lights</Type>
+		<Title>Courtyard</Title>
+		<Channel id="1">
+			<type>switch</type>
+			<Name>Front Wall</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>switch</type>
+			<Name>Back Wall</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="3">
+			<type>switch</type>
+			<Name>Pond</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="5">
+			<type>switch</type>
+			<Name>Wall by Garage</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="159">
+		<Type>Lights</Type>
+		<Title>Garden</Title>
+		<Channel id="1">
+			<type>switch</type>
+			<Name>House Wall</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="2">
+			<type>switch</type>
+			<Name>Step Lights</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+		<Channel id="3">
+			<type>switch</type>
+			<Name>Patio Wall</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+	<Room id="161">
+		<Type>Ventilation</Type>
+		<Title>Fans</Title>
+		<mode>Named+OFF</mode>
+		<Scene id="1">
+			<Name>On</Name>
+		</Scene>
+		<Channel id="1">
+			<type>switch</type>
+			<Name>Fans</Name>
+			<Levels>FFBF7F3F000000000000000000000000</Levels>
+		</Channel>
+	</Room>
+
+</rooms>
+</rako>

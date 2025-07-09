@@ -141,3 +141,85 @@ def test_ventilation_command_compatibility():
     # Test that ventilation channel can use lighting level commands
     channel_level_command = CommandLevelHTTP(room=161, channel=1, level=128)
     assert channel_level_command.as_params() == {"room": 161, "ch": 1, "lev": 128}
+
+
+def test_get_all_devices_from_discovery_xml(rako_xml3):
+    """Test discovering all device types from XML"""
+    all_devices = list(Bridge.get_all_devices_from_discovery_xml(rako_xml3))
+
+    # Should contain both lights and ventilation
+    lights = [dev for dev in all_devices if isinstance(dev, (RoomLight, ChannelLight))]
+    ventilation = [
+        dev
+        for dev in all_devices
+        if isinstance(dev, (RoomVentilation, ChannelVentilation))
+    ]
+
+    # Should have many lights and 2 ventilation devices
+    assert len(lights) > 10  # rako3.xml has many light rooms
+    assert len(ventilation) == 2  # 1 RoomVentilation + 1 ChannelVentilation
+
+    # Check specific ventilation devices are included
+    ventilation_room = next(
+        (dev for dev in ventilation if isinstance(dev, RoomVentilation)), None
+    )
+    assert ventilation_room is not None
+    assert ventilation_room.room_id == 161
+    assert ventilation_room.room_title == "Fans"
+
+
+def test_get_devices_with_specific_types(rako_xml3):
+    """Test discovering specific device types using list parameter"""
+    # Test with list of device types
+    lights_only = list(Bridge.get_devices_from_discovery_xml(rako_xml3, ["Lights"]))
+    ventilation_only = list(
+        Bridge.get_devices_from_discovery_xml(rako_xml3, ["Ventilation"])
+    )
+    both_types = list(
+        Bridge.get_devices_from_discovery_xml(rako_xml3, ["Lights", "Ventilation"])
+    )
+
+    # Verify filtering works correctly
+    assert all(isinstance(dev, (RoomLight, ChannelLight)) for dev in lights_only)
+    assert all(
+        isinstance(dev, (RoomVentilation, ChannelVentilation))
+        for dev in ventilation_only
+    )
+    assert len(both_types) == len(lights_only) + len(ventilation_only)
+
+
+def test_get_devices_backward_compatibility(rako_xml3):
+    """Test that existing string parameter still works"""
+    # Test backward compatibility with string parameter
+    lights_str = list(Bridge.get_devices_from_discovery_xml(rako_xml3, "Lights"))
+    lights_list = list(Bridge.get_devices_from_discovery_xml(rako_xml3, ["Lights"]))
+
+    # Should return the same devices
+    assert lights_str == lights_list
+
+    # Test ventilation backward compatibility
+    ventilation_str = list(
+        Bridge.get_devices_from_discovery_xml(rako_xml3, "Ventilation")
+    )
+    ventilation_list = list(
+        Bridge.get_devices_from_discovery_xml(rako_xml3, ["Ventilation"])
+    )
+
+    assert ventilation_str == ventilation_list
+
+
+def test_get_devices_all_parameter_variants(rako_xml3):
+    """Test different ways to get all devices"""
+    all_devices_none = list(Bridge.get_devices_from_discovery_xml(rako_xml3, None))
+    all_devices_all = list(Bridge.get_devices_from_discovery_xml(rako_xml3, "All"))
+    all_devices_method = list(Bridge.get_all_devices_from_discovery_xml(rako_xml3))
+
+    # All should return the same devices
+    assert all_devices_none == all_devices_all == all_devices_method
+
+    # Should contain both lights and ventilation
+    assert any(isinstance(dev, (RoomLight, ChannelLight)) for dev in all_devices_none)
+    assert any(
+        isinstance(dev, (RoomVentilation, ChannelVentilation))
+        for dev in all_devices_none
+    )

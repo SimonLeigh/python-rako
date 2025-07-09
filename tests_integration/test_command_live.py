@@ -9,6 +9,7 @@ from python_rako import Bridge, ChannelStatusMessage, SceneStatusMessage
 from python_rako.helpers import get_dg_listener
 
 
+@pytest.mark.asyncio
 async def _test_set_room_scene(bridge: Bridge):
     test_room_id = 5
     test_scene = 1
@@ -39,6 +40,7 @@ async def test_set_room_scene_http(http_bridge: Bridge):
     await _test_set_room_scene(http_bridge)
 
 
+@pytest.mark.asyncio
 async def _test_set_room_brightness(bridge: Bridge):
     test_room_id = 5
     test_brightness = 150

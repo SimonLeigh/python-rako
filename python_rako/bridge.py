@@ -175,6 +175,13 @@ class Bridge:
             if isinstance(device, (RoomVentilation, ChannelVentilation)):
                 yield device
 
+    async def discover_all_devices(
+        self, session: aiohttp.ClientSession
+    ) -> AsyncGenerator[Light | Ventilation]:
+        rako_xml = await self.get_rako_xml(session)
+        for device in self.get_devices_from_discovery_xml(rako_xml):
+            yield device
+
     async def get_info(self, session: aiohttp.ClientSession) -> BridgeInfo:
         try:
             rako_xml = await self.get_rako_xml(session)
@@ -210,21 +217,34 @@ class Bridge:
                 yield device
 
     @staticmethod
+    def get_all_devices_from_discovery_xml(xml: str) -> Generator[Light | Ventilation]:
+        """Get all devices (lights and ventilation) from discovery XML."""
+        return Bridge.get_devices_from_discovery_xml(xml)
+
+    @staticmethod
     def get_devices_from_discovery_xml(
-        xml: str, device_type: str
+        xml: str, device_types: str | list[str] | None = None
     ) -> Generator[Light | Ventilation]:
+        # Handle different input types for backward compatibility
+        if device_types is None or device_types == "All":
+            target_types = {"Lights", "Ventilation"}
+        elif isinstance(device_types, str):
+            target_types = {device_types}
+        else:
+            target_types = set(device_types)
+
         xml_dict = xmltodict.parse(xml, force_list={"Room"})
         for room in xml_dict["rako"]["rooms"]["Room"]:
             room_id = int(room["@id"])
             room_type = room.get("Type", "Lights")
-            if room_type != device_type:
+            if room_type not in target_types:
                 continue
             room_title = room["Title"]
 
             # Yield room-level device
-            if device_type == "Lights":
+            if room_type == "Lights":
                 yield RoomLight(room_id, room_title)
-            elif device_type == "Ventilation":
+            elif room_type == "Ventilation":
                 yield RoomVentilation(room_id, room_title)
 
             # Yield channel-level devices
@@ -240,7 +260,7 @@ class Bridge:
                 channel_name = channel["Name"]
                 channel_levels = channel["Levels"]
 
-                if device_type == "Lights":
+                if room_type == "Lights":
                     yield ChannelLight(
                         room_id,
                         room_title,
@@ -249,7 +269,7 @@ class Bridge:
                         channel_name,
                         channel_levels,
                     )
-                elif device_type == "Ventilation":
+                elif room_type == "Ventilation":
                     yield ChannelVentilation(
                         room_id,
                         room_title,

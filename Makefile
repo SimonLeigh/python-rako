@@ -110,3 +110,21 @@ venv: clean-venv ## Create Python venv environment.
 install-dev: clean
 	pip install -Ur requirements_dev.txt; \
 	pre-commit install;
+
+.PHONY: bump-patch
+bump-patch: ## Bump patch version (x.y.Z) and commit
+	@python -c "import re; content = open('python_rako/__version__.py').read().strip(); match = re.search(r'(\d+)\.(\d+)\.(\d+)', content); major, minor, patch = match.groups(); new_version = f'{major}.{minor}.{int(patch) + 1}'; open('python_rako/__version__.py', 'w').write(new_version); print(f'Bumped version to {new_version}')"
+	@git add python_rako/__version__.py
+	@git commit -m "Bump version to $$(cat python_rako/__version__.py)"
+
+.PHONY: bump-minor
+bump-minor: ## Bump minor version (x.Y.z) and commit
+	@python -c "import re; content = open('python_rako/__version__.py').read().strip(); match = re.search(r'(\d+)\.(\d+)\.(\d+)', content); major, minor, patch = match.groups(); new_version = f'{major}.{int(minor) + 1}.0'; open('python_rako/__version__.py', 'w').write(new_version); print(f'Bumped version to {new_version}')"
+	@git add python_rako/__version__.py
+	@git commit -m "Bump version to $$(cat python_rako/__version__.py)"
+
+.PHONY: bump-major
+bump-major: ## Bump major version (X.y.z) and commit
+	@python -c "import re; content = open('python_rako/__version__.py').read().strip(); match = re.search(r'(\d+)\.(\d+)\.(\d+)', content); major, minor, patch = match.groups(); new_version = f'{int(major) + 1}.0.0'; open('python_rako/__version__.py', 'w').write(new_version); print(f'Bumped version to {new_version}')"
+	@git add python_rako/__version__.py
+	@git commit -m "Bump version to $$(cat python_rako/__version__.py)"

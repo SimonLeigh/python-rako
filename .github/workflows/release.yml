@@ -14,28 +14,28 @@ jobs:
 
     steps:
       - name: Checking out code from GitHub
-        uses: actions/checkout@v2
-      - name: Set up Python 3.9
-        uses: actions/setup-python@v2
+        uses: actions/checkout@v4
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v4
         with:
-          python-version: 3.9
+          python-version: 3.12
       - name: generate version file
         run: |
-          echo "__version__ = \"$RELEASE_TAG\"" > python_rako/__version__.py
+          echo "$RELEASE_TAG" > python_rako/__version__.py
           cat python_rako/__version__.py
         env:
           RELEASE_TAG: ${{ github.event.release.tag_name }}
       - name: Install dependencies
         run: |
-          python -m pip install --user --upgrade pip setuptools wheel
+          python -m pip install --user --upgrade pip setuptools wheel build
       - name: Build
         run: >-
-          python setup.py sdist bdist_wheel
+          python -m build
 
       # TEST
       - name: Publish to Test PyPI
         if: startsWith(github.event.ref, 'refs/tags') || github.event_name == 'release'
-        uses: pypa/gh-action-pypi-publish@master
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
           password: ${{ secrets.TEST_PYPI_TOKEN }}
@@ -44,7 +44,7 @@ jobs:
       # PROD
       - name: Publish distribution 📦 to PyPI
         if: startsWith(github.event.ref, 'refs/tags') || github.event_name == 'release'
-        uses: pypa/gh-action-pypi-publish@master
+        uses: pypa/gh-action-pypi-publish@release/v1
         with:
           user: __token__
           password: ${{ secrets.PYPI_TOKEN }}

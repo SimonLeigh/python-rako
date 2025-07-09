@@ -4,7 +4,7 @@
 <version>2.5.0 WTC</version>
 <buildDate>Sep 26 2019 16:03:54</buildDate>
 <hostName>RAKOBRIDGE     </hostName>
-<hostIP>someip</hostIP>l
+<hostIP>someip</hostIP>
 <hostMAC>somemac</hostMAC>
 <hwStatus>2F</hwStatus>
 <dbVersion>-18</dbVersion>

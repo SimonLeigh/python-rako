@@ -160,16 +160,38 @@ class Bridge:
             rako_xml: str = await response.text()
         return rako_xml
 
+    async def discover_devices(
+        self, session: aiohttp.ClientSession
+    ) -> tuple[list[Light], list[Ventilation]]:
+        """Discover all devices by fetching XML once and parsing all device types.
+
+        Returns a tuple of (lights, ventilation) to avoid race conditions.
+        """
+        rako_xml = await self.get_rako_xml(session)
+
+        lights: list[Light] = []
+        ventilation: list[Ventilation] = []
+
+        for device in self.get_devices_from_discovery_xml(rako_xml):
+            if isinstance(device, (RoomLight, ChannelLight)):
+                lights.append(device)  # type: ignore[arg-type]
+            elif isinstance(device, (RoomVentilation, ChannelVentilation)):
+                ventilation.append(device)  # type: ignore[arg-type]
+
+        return lights, ventilation
+
     async def discover_lights(
         self, session: aiohttp.ClientSession
-    ) -> AsyncGenerator[Light]:
+    ) -> AsyncGenerator[RoomLight | ChannelLight, None]:
+        """Discover lights by fetching XML once and filtering for lights."""
         rako_xml = await self.get_rako_xml(session)
         for light in self.get_lights_from_discovery_xml(rako_xml):
             yield light
 
     async def discover_ventilation(
         self, session: aiohttp.ClientSession
-    ) -> AsyncGenerator[Ventilation]:
+    ) -> AsyncGenerator[RoomVentilation | ChannelVentilation, None]:
+        """Discover ventilation by fetching XML once and filtering for ventilation."""
         rako_xml = await self.get_rako_xml(session)
         for device in self.get_devices_from_discovery_xml(rako_xml, "Ventilation"):
             if isinstance(device, (RoomVentilation, ChannelVentilation)):
@@ -177,7 +199,8 @@ class Bridge:
 
     async def discover_all_devices(
         self, session: aiohttp.ClientSession
-    ) -> AsyncGenerator[Light | Ventilation]:
+    ) -> AsyncGenerator[RoomLight | ChannelLight | RoomVentilation | ChannelVentilation, None]:
+        """Discover all devices by fetching XML once."""
         rako_xml = await self.get_rako_xml(session)
         for device in self.get_devices_from_discovery_xml(rako_xml):
             yield device
@@ -211,20 +234,20 @@ class Bridge:
         )
 
     @staticmethod
-    def get_lights_from_discovery_xml(xml: str) -> Generator[Light]:
+    def get_lights_from_discovery_xml(xml: str) -> Generator[RoomLight | ChannelLight, None, None]:
         for device in Bridge.get_devices_from_discovery_xml(xml, "Lights"):
             if isinstance(device, (RoomLight, ChannelLight)):
                 yield device
 
     @staticmethod
-    def get_all_devices_from_discovery_xml(xml: str) -> Generator[Light | Ventilation]:
+    def get_all_devices_from_discovery_xml(xml: str) -> Generator[RoomLight | ChannelLight | RoomVentilation | ChannelVentilation, None, None]:
         """Get all devices (lights and ventilation) from discovery XML."""
         return Bridge.get_devices_from_discovery_xml(xml)
 
     @staticmethod
     def get_devices_from_discovery_xml(
         xml: str, device_types: str | list[str] | None = None
-    ) -> Generator[Light | Ventilation]:
+    ) -> Generator[RoomLight | ChannelLight | RoomVentilation | ChannelVentilation, None, None]:
         # Handle different input types for backward compatibility
         if device_types is None or device_types == "All":
             target_types = {"Lights", "Ventilation"}
@@ -284,11 +307,12 @@ class Bridge:
         if not resp:
             return None
 
-        data, (remote_ip, _) = resp
+        data, addr = resp
+        remote_ip, _ = addr
         if remote_ip != self.host:
             return None
 
-        byte_list = list(data)
+        byte_list = list(data) if isinstance(data, (bytes, bytearray)) else [int(data)]
         _LOGGER.debug("Received bytes: %s", byte_list)
         message = deserialise_byte_list(byte_list)
         _LOGGER.debug("Deserialised received message as: %s", message)

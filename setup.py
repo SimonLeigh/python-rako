@@ -15,7 +15,7 @@ with open("README.md") as readme_file:
 
 setup(
     name="python-rako-2025",
-    version="0.1.0",
+    version="0.2.0",
     license="MIT",
     url="https://github.com/simonleigh/python-rako",
     author="Simon Leigh",

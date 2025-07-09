@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "python-rako-2025"
-version = "0.1.0"
+version = "0.2.0"
 description = "Asynchronous Python client for Rako Controls Lighting"
 readme = "README.md"
 keywords = ["rako", "controls", "api", "async", "client"]

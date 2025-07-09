@@ -153,6 +153,7 @@ class Bridge:
         self.level_cache: LevelCache = LevelCache()
         self.scene_cache: SceneCache = SceneCache()
         self._cached_xml: str | None = None
+        self._xml_fetch_lock = asyncio.Lock()
 
     @property
     def _discovery_url(self) -> str:
@@ -161,9 +162,10 @@ class Bridge:
     async def get_rako_xml(
         self, session: aiohttp.ClientSession, force_refresh: bool = False
     ) -> str:
-        if self._cached_xml is None or force_refresh:
-            async with session.get(self._discovery_url) as response:
-                self._cached_xml = await response.text()
+        async with self._xml_fetch_lock:
+            if self._cached_xml is None or force_refresh:
+                async with session.get(self._discovery_url) as response:
+                    self._cached_xml = await response.text()
         assert self._cached_xml is not None
         return self._cached_xml
 

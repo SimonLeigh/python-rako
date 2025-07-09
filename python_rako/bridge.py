@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import threading
 from collections.abc import AsyncGenerator, Generator
 from typing import Any
 
@@ -38,6 +39,9 @@ from python_rako.model import (
 )
 
 _LOGGER = logging.getLogger(__name__)
+
+# Thread lock for XML parsing to ensure concurrency safety
+_XML_PARSE_LOCK = threading.Lock()
 
 
 class _BridgeCommander:
@@ -227,7 +231,8 @@ class Bridge:
 
     @staticmethod
     def get_bridge_info_from_discovery_xml(xml: str) -> BridgeInfo:
-        xml_dict = xmltodict.parse(xml)
+        with _XML_PARSE_LOCK:
+            xml_dict = xmltodict.parse(xml)
         info = xml_dict["rako"].get("info", dict())
         config = xml_dict["rako"].get("config", dict())
         return BridgeInfo(
@@ -270,7 +275,8 @@ class Bridge:
         else:
             target_types = set(device_types)
 
-        xml_dict = xmltodict.parse(xml, force_list={"Room"})
+        with _XML_PARSE_LOCK:
+            xml_dict = xmltodict.parse(xml, force_list={"Room"})
         for room in xml_dict["rako"]["rooms"]["Room"]:
             room_id = int(room["@id"])
             room_type = room.get("Type", "Lights")

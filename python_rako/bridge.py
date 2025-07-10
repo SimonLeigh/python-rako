@@ -57,9 +57,7 @@ class _BridgeCommander:
         """Set the brightness of a room."""
         await self.set_channel_brightness(room_id, 0, brightness)
 
-    async def set_channel_brightness(
-        self, room_id: int, channel_id: int, brightness: int
-    ) -> None:
+    async def set_channel_brightness(self, room_id: int, channel_id: int, brightness: int) -> None:
         """Set the brightness of a channel."""
         raise NotImplementedError()
 
@@ -75,9 +73,7 @@ class BridgeCommanderUDP(_BridgeCommander):
         )
         await self._send_command(command)
 
-    async def set_channel_brightness(
-        self, room_id: int, channel_id: int, brightness: int
-    ) -> None:
+    async def set_channel_brightness(self, room_id: int, channel_id: int, brightness: int) -> None:
         """Set the brightness of a channel."""
         command = CommandUDP(
             room=room_id,
@@ -117,9 +113,7 @@ class BridgeCommanderHTTP(_BridgeCommander):
         )
         await self._send_command(command)
 
-    async def set_channel_brightness(
-        self, room_id: int, channel_id: int, brightness: int
-    ) -> None:
+    async def set_channel_brightness(self, room_id: int, channel_id: int, brightness: int) -> None:
         """Set the brightness of a channel."""
         command = CommandLevelHTTP(
             room=room_id,
@@ -171,9 +165,7 @@ class Bridge:
 
     async def discover_devices(
         self, session: aiohttp.ClientSession, force_refresh: bool = False
-    ) -> tuple[
-        list[RoomLight | ChannelLight], list[RoomVentilation | ChannelVentilation]
-    ]:
+    ) -> tuple[list[RoomLight | ChannelLight], list[RoomVentilation | ChannelVentilation]]:
         """Discover all devices by fetching XML once and parsing all device types.
 
         Returns a tuple of (lights, ventilation) to avoid race conditions.
@@ -268,9 +260,7 @@ class Bridge:
             # Yield channel-level devices
             channels_section = room.get("Channel", [])
             channels = (
-                channels_section
-                if isinstance(channels_section, list)
-                else [channels_section]
+                channels_section if isinstance(channels_section, list) else [channels_section]
             )
             for channel in channels:
                 channel_id = int(channel["@id"])
@@ -325,7 +315,7 @@ class Bridge:
             while True:
                 try:
                     data, _ = await asyncio.wait_for(dg_client.recv(), timeout=2.0)
-                except asyncio.TimeoutError:
+                except TimeoutError:
                     _LOGGER.warning("Timeout waiting for cache response")
                     break
 
@@ -348,10 +338,6 @@ class Bridge:
         """Set the brightness of a room."""
         await self._bridge_commander.set_room_brightness(room_id, brightness)
 
-    async def set_channel_brightness(
-        self, room_id: int, channel_id: int, brightness: int
-    ) -> None:
+    async def set_channel_brightness(self, room_id: int, channel_id: int, brightness: int) -> None:
         """Set the brightness of a channel."""
-        await self._bridge_commander.set_channel_brightness(
-            room_id, channel_id, brightness
-        )
+        await self._bridge_commander.set_channel_brightness(room_id, channel_id, brightness)

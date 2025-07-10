@@ -78,9 +78,7 @@ def test_deserialise_unsupported_message(in_bytes, exp_obj):
 
 
 def test_deserialise_scene_cache_message():
-    payload_result = deserialise_byte_list(
-        [67, 13, 4, 5, 0, 21, 8, 17, 0, 9, 0, 10, 0, 13, 156]
-    )
+    payload_result = deserialise_byte_list([67, 13, 4, 5, 0, 21, 8, 17, 0, 9, 0, 10, 0, 13, 156])
     exp_obj = SceneCache({5: 1, 21: 0, 17: 2, 9: 0, 10: 0, 13: 0})
     assert payload_result == exp_obj
 
@@ -140,7 +138,7 @@ def test_deserialise_level_cache_message():
         ]
     )
 
-    padding = {i: 0 for i in range(5, 18, 1)}
+    padding = dict.fromkeys(range(5, 18, 1), 0)
     exp = LevelCache(
         {
             RoomChannel(9, 1): LevelCacheItem(

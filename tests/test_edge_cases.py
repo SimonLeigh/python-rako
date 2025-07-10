@@ -3,8 +3,6 @@
 Test edge cases for XML parsing to ensure the force_list approach is robust
 """
 
-import json
-
 import xmltodict
 
 

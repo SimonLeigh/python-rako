@@ -52,9 +52,7 @@ def test_xml_parsing():
 
     if ventilation_rooms:
         vent_room = ventilation_rooms[0]
-        print(
-            f"   Found ventilation room: ID={vent_room['@id']}, Title={vent_room['Title']}"
-        )
+        print(f"   Found ventilation room: ID={vent_room['@id']}, Title={vent_room['Title']}")
         print(f"   Ventilation room structure: {json.dumps(vent_room, indent=2)}")
     else:
         print("   No ventilation rooms found!")
@@ -105,13 +103,9 @@ def test_xml_parsing():
             room_title = room["Title"]
 
             if i < 3:  # Show first 3 rooms
-                print(
-                    f"   Room {i}: ID={room_id}, Type={room_type}, Title={room_title}"
-                )
+                print(f"   Room {i}: ID={room_id}, Type={room_type}, Title={room_title}")
             elif i == 3:
-                print(
-                    f"   ... (showing first 3 of {len(xml_dict['rako']['rooms']['Room'])} rooms)"
-                )
+                print(f"   ... (showing first 3 of {len(xml_dict['rako']['rooms']['Room'])} rooms)")
                 break
 
         # Show the ventilation room specifically
@@ -120,9 +114,7 @@ def test_xml_parsing():
                 room_id = int(room["@id"])
                 room_type = room.get("Type", "Lights")
                 room_title = room["Title"]
-                print(
-                    f"   Ventilation Room: ID={room_id}, Type={room_type}, Title={room_title}"
-                )
+                print(f"   Ventilation Room: ID={room_id}, Type={room_type}, Title={room_title}")
                 break
 
     except Exception as e:
@@ -134,15 +126,9 @@ def test_xml_parsing():
     print(f"- Total rooms in XML: {len(rooms)}")
     print(f"- Lights rooms: {room_counts.get('Lights', 0)}")
     print(f"- Ventilation rooms: {room_counts.get('Ventilation', 0)}")
-    print(
-        f"- force_list={'Room'} ensures rooms is always a list: {isinstance(rooms, list)}"
-    )
-    print(
-        f"- Single room XML with force_list works correctly: {isinstance(minimal_rooms, list)}"
-    )
-    print(
-        f"- Without force_list, single room becomes dict: {isinstance(no_force_rooms, dict)}"
-    )
+    print(f"- force_list={'Room'} ensures rooms is always a list: {isinstance(rooms, list)}")
+    print(f"- Single room XML with force_list works correctly: {isinstance(minimal_rooms, list)}")
+    print(f"- Without force_list, single room becomes dict: {isinstance(no_force_rooms, dict)}")
     print()
     print("CONCLUSION:")
     print("The current code at bridge.py:236 using force_list={'Room'} is CORRECT.")

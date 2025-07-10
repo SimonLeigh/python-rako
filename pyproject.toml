@@ -1,35 +1,50 @@
 [build-system]
-requires = ["setuptools>=61.0", "wheel"]
-build-backend = "setuptools.build_meta"
+requires = ["hatchling"]
+build-backend = "hatchling.build"
 
 [project]
 name = "python-rako-2025"
 dynamic = ["version"]
 description = "Asynchronous Python client for Rako Controls Lighting"
 readme = "README.md"
-keywords = ["rako", "controls", "api", "async", "client"]
+keywords = ["rako", "controls", "api", "async", "client", "lighting", "automation"]
 authors = [
     {name = "Simon Leigh", email = "simonleigh@users.noreply.github.com"},
 ]
+license = "MIT"
 classifiers = [
     "Development Status :: 4 - Beta",
     "Framework :: AsyncIO",
     "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
     "Natural Language :: English",
     "Operating System :: OS Independent",
     "Programming Language :: Python",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.10",
-    "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
+    "Topic :: Home Automation",
     "Topic :: Software Development :: Libraries :: Python Modules",
+    "Typing :: Typed",
 ]
-requires-python = ">=3.10"
+requires-python = ">=3.12"
 dependencies = [
     "aiohttp>=3.10.0",
     "asyncio-dgram>=2.2.0",
     "xmltodict>=0.13.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pre-commit>=3.6.0",
+    "hatch>=1.9.0",
+]
+test = [
+    "pytest>=8.0.0",
+    "pytest-asyncio>=0.23.0",
+    "pytest-cov>=4.0.0",
+    "aresponses>=3.0.0",
+    "coverage[toml]>=7.4.0",
 ]
 
 [project.urls]
@@ -37,54 +52,76 @@ Homepage = "https://github.com/simonleigh/python-rako"
 Repository = "https://github.com/simonleigh/python-rako"
 Issues = "https://github.com/simonleigh/python-rako/issues"
 
+# Hatchling configuration
+[tool.hatch.version]
+path = "python_rako/__version__.py"
 
-[tool.setuptools.packages.find]
-include = ["python_rako*"]
+[tool.hatch.build.targets.wheel]
+packages = ["python_rako"]
 
-[tool.setuptools.package-data]
-python_rako = ["py.typed"]
-
-[tool.setuptools.dynamic]
-version = {file = "python_rako/__version__.py"}
-
+# Ruff configuration (replaces flake8, isort, pylint, black)
 [tool.ruff]
-target-version = "py310"
+target-version = "py312"
 line-length = 100
+src = ["python_rako", "tests"]
+
+[tool.ruff.lint]
 select = [
-    "E",  # pycodestyle errors
-    "W",  # pycodestyle warnings
-    "F",  # pyflakes
-    "I",  # isort
-    "B",  # flake8-bugbear
-    "C4", # flake8-comprehensions
-    "UP", # pyupgrade
-    "PL", # pylint
+    "E",     # pycodestyle errors
+    "W",     # pycodestyle warnings
+    "F",     # pyflakes
+    "I",     # isort
+    "B",     # flake8-bugbear
+    "C4",    # flake8-comprehensions
+    "UP",    # pyupgrade
+    "RUF",   # ruff-specific rules
+    "S",     # bandit security checks
+    "SIM",   # flake8-simplify
+    "TCH",   # flake8-type-checking
+    "PTH",   # flake8-use-pathlib
 ]
 ignore = [
-    "E501",  # line too long, handled by black
-    "B008",  # do not perform function calls in argument defaults
-    "C901",  # too complex
-    "PLR0913", # too many arguments
-    "PLR0912", # too many branches
-    "PLR0915", # too many statements
+    "E501",    # line too long, handled by formatter
+    "B008",    # do not perform function calls in argument defaults
+    "S101",    # use of assert detected
 ]
 
-[tool.ruff.per-file-ignores]
-"tests/*" = ["PLR2004"]
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S105", "S106", "PLR2004"]  # Allow test patterns
+"examples/*" = ["T20", "PLR2004"]        # Allow prints and magic values
 
+[tool.ruff.lint.isort]
+known-first-party = ["python_rako"]
+
+[tool.ruff.format]
+quote-style = "double"
+indent-style = "space"
+skip-magic-trailing-comma = false
+line-ending = "auto"
+
+# Minimal MyPy configuration
 [tool.mypy]
-python_version = "3.10"
-check_untyped_defs = true
-disallow_any_generics = true
-disallow_incomplete_defs = true
-disallow_untyped_defs = true
-no_implicit_optional = true
-warn_redundant_casts = true
-warn_unused_ignores = true
+python_version = "3.12"
 warn_return_any = true
-warn_unreachable = true
-strict_equality = true
-enable_error_code = ["ignore-without-code"]
+warn_unused_configs = true
+disallow_untyped_defs = true
+ignore_missing_imports = true
 
+# Pytest configuration
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
+testpaths = ["tests"]
+addopts = [
+    "--strict-markers",
+    "--cov=python_rako",
+    "--cov-report=term-missing",
+    "--cov-fail-under=80",
+]
+
+# Coverage configuration
+[tool.coverage.run]
+source = ["python_rako"]
+omit = ["python_rako/__version__.py", "tests/*"]
+
+[tool.coverage.report]
+exclude_lines = ["pragma: no cover", "def __repr__", "raise NotImplementedError"]

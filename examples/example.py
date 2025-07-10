@@ -23,9 +23,7 @@ def main():
     loop = asyncio.get_event_loop()
 
     # Find the bridge
-    bridge_desc: BridgeDescription = loop.run_until_complete(
-        asyncio.gather(discover_bridge())
-    )[0]
+    bridge_desc: BridgeDescription = loop.run_until_complete(asyncio.gather(discover_bridge()))[0]
     print(bridge_desc)
 
     # Listen for state updates in the lights

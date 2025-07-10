@@ -31,9 +31,7 @@ _LOGGER = logging.getLogger(__name__)
 
 
 @asynccontextmanager
-async def get_dg_listener(
-    port: int, listen_host: str = "0.0.0.0"
-) -> AsyncIterator[DatagramServer]:
+async def get_dg_listener(port: int, listen_host: str = "0.0.0.0") -> AsyncIterator[DatagramServer]:
     server: DatagramServer = None
     try:
         server = await asyncio_dgram.bind((listen_host, port))
@@ -117,9 +115,7 @@ def deserialise_level_cache_message(byte_list: list[int]) -> LevelCache:
     for b in it:
         if b != DataRecordType.DATA.value:
             break
-        lc = LevelCacheItem(
-            next(it), next(it), next(it), {i: next(it) for i in range(1, 18, 1)}
-        )
+        lc = LevelCacheItem(next(it), next(it), next(it), {i: next(it) for i in range(1, 18, 1)})
         scene_cache[RoomChannel(lc.room, lc.channel)] = lc
     return LevelCache(scene_cache)
 
@@ -198,7 +194,5 @@ def convert_to_scene(brightness: int) -> int:
     :param brightness: int representing brightness 0-255
     """
 
-    scene = [
-        k for k, v in _scene_windows.items() if v["low"] <= brightness < v["high"]
-    ][0]
+    scene = [k for k, v in _scene_windows.items() if v["low"] <= brightness < v["high"]][0]
     return scene

@@ -17,7 +17,5 @@ async def udp_bridge() -> Bridge:
 async def http_bridge() -> AsyncGenerator[Bridge, None]:
     bridge_desc = await discover_bridge()
     async with aiohttp.ClientSession() as session:
-        bridge_commander = BridgeCommanderHTTP(
-            bridge_desc["host"], bridge_desc["port"], session
-        )
+        bridge_commander = BridgeCommanderHTTP(bridge_desc["host"], bridge_desc["port"], session)
         yield Bridge(**bridge_desc, bridge_commander=bridge_commander)

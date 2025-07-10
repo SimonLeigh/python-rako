@@ -30,7 +30,7 @@ async def write_to_file(filename, data):
 async def read_from_file(filename):
     # Open the file for reading using async with, which ensures the file is closed
     # when we're done with it
-    async with aiofiles.open(filename, "r") as f:
+    async with aiofiles.open(filename) as f:
         # Read the contents of the file using the await keyword
         data = await f.read()
         # Return the data as a string
@@ -74,9 +74,7 @@ def main():
     loop = asyncio.get_event_loop()
 
     # Find the bridge
-    bridge_desc: BridgeDescription = loop.run_until_complete(
-        asyncio.gather(discover_bridge())
-    )[0]
+    bridge_desc: BridgeDescription = loop.run_until_complete(asyncio.gather(discover_bridge()))[0]
     print(bridge_desc)
 
     # Listen for state updates in the lights

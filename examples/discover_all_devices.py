@@ -7,6 +7,7 @@ This script shows how to:
 2. Discover specific device types using lists
 3. Use the new flexible discovery API
 """
+
 import asyncio
 
 import aiohttp
@@ -47,9 +48,7 @@ async def main():
 
         # Get specific device types using list parameter
         lights = list(Bridge.get_devices_from_discovery_xml(rako_xml, ["Lights"]))
-        ventilation = list(
-            Bridge.get_devices_from_discovery_xml(rako_xml, ["Ventilation"])
-        )
+        ventilation = list(Bridge.get_devices_from_discovery_xml(rako_xml, ["Ventilation"]))
 
         print(f"Lights found: {len(lights)}")
         print(f"Ventilation found: {len(ventilation)}")

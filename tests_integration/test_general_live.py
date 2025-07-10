@@ -27,9 +27,7 @@ async def test_discover_lights(udp_bridge: Bridge):
 
 @pytest.mark.asyncio
 async def test_get_cache_state(udp_bridge: Bridge):
-    level_cache, scene_cache = await udp_bridge.get_cache_state(
-        RequestType.SCENE_LEVEL_CACHE
-    )
+    level_cache, scene_cache = await udp_bridge.get_cache_state(RequestType.SCENE_LEVEL_CACHE)
 
     assert isinstance(level_cache, LevelCache)
     assert len(level_cache) >= 1

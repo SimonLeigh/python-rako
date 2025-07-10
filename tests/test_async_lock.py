@@ -5,7 +5,7 @@ Test script to verify async locking mechanism prevents simultaneous HTTP request
 
 import asyncio
 import time
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import patch
 
 import aiohttp
 
@@ -32,9 +32,7 @@ async def test_async_lock_prevents_simultaneous_requests():
     print("=== Testing Async Lock Mechanism ===\n")
 
     # Create a bridge instance
-    bridge = Bridge(
-        host="192.168.1.100", port=9761, name="Test Bridge", mac="00:11:22:33:44:55"
-    )
+    bridge = Bridge(host="192.168.1.100", port=9761, name="Test Bridge", mac="00:11:22:33:44:55")
 
     # Track call times and order
     call_times = []
@@ -53,7 +51,7 @@ async def test_async_lock_prevents_simultaneous_requests():
 
         # Return mock response
         return MockResponse(
-            f"""<?xml version="1.0" encoding="UTF-8"?>
+            """<?xml version="1.0" encoding="UTF-8"?>
 <rako>
     <rooms>
         <Room id="1">
@@ -84,7 +82,7 @@ async def test_async_lock_prevents_simultaneous_requests():
             end_time = time.time()
 
             print(f"\nTotal execution time: {end_time - start_time:.2f} seconds")
-            print(f"Expected minimum time (5 requests * 0.1s each): 0.5 seconds")
+            print("Expected minimum time (5 requests * 0.1s each): 0.5 seconds")
             print(f"Mock HTTP calls made: {mock_get.call_count}")
 
             # Verify all results are the same (cached)
@@ -93,9 +91,7 @@ async def test_async_lock_prevents_simultaneous_requests():
             ), "All results should be identical due to caching"
 
             # Verify only one HTTP call was made
-            assert (
-                mock_get.call_count == 1
-            ), f"Expected 1 HTTP call, got {mock_get.call_count}"
+            assert mock_get.call_count == 1, f"Expected 1 HTTP call, got {mock_get.call_count}"
 
             print(
                 f"\n✓ SUCCESS: Only {mock_get.call_count} HTTP request made despite {len(tasks)} concurrent calls"
@@ -108,9 +104,7 @@ async def test_force_refresh_with_concurrent_requests():
 
     print("\n=== Testing Force Refresh with Concurrent Requests ===\n")
 
-    bridge = Bridge(
-        host="192.168.1.100", port=9761, name="Test Bridge", mac="00:11:22:33:44:55"
-    )
+    bridge = Bridge(host="192.168.1.100", port=9761, name="Test Bridge", mac="00:11:22:33:44:55")
 
     call_count = 0
 
@@ -143,12 +137,10 @@ async def test_force_refresh_with_concurrent_requests():
             results = await asyncio.gather(*tasks)
 
             print(f"HTTP calls made: {mock_get.call_count}")
-            print(f"Expected calls: 2 (1 initial + 1 for force_refresh)")
+            print("Expected calls: 2 (1 initial + 1 for force_refresh)")
 
             # Should make 2 calls total: 1 initial + 1 for force_refresh (others wait on lock)
-            assert (
-                mock_get.call_count == 2
-            ), f"Expected 2 HTTP calls, got {mock_get.call_count}"
+            assert mock_get.call_count == 2, f"Expected 2 HTTP calls, got {mock_get.call_count}"
 
             # All force_refresh results should be the same
             assert all(

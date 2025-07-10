@@ -28,28 +28,22 @@ help: ## Shows this message.
 .PHONY: dev
 dev: install-dev install ## Set up a development environment.
 
-.PHONY: black
-black: lint-black
-
 .PHONY: lint
-lint: lint-black lint-flake8 lint-pylint lint-mypy ## Run all linters.
+lint: ## Run Ruff linting and formatting checks.
+	python -m ruff check
+	python -m ruff format --check
 
-.PHONY: lint-black
-lint-black: ## Run linting using black & blacken-docs.
-	black --safe --target-version py38 python_rako tests examples; \
-	blacken-docs --target-version py38
+.PHONY: format
+format: ## Format code with Ruff.
+	python -m ruff format
+	python -m ruff check --fix
 
-.PHONY: lint-flake8
-lint-flake8: ## Run linting using flake8 (pycodestyle/pydocstyle).
-	flake8 python_rako
+.PHONY: typecheck
+typecheck: ## Run type checking with MyPy.
+	python -m mypy python_rako/
 
-.PHONY: lint-pylint
-lint-pylint: ## Run linting using PyLint.
-	pylint python_rako
-
-.PHONY: lint-mypy
-lint-mypy: ## Run linting using MyPy.
-	mypy -p python_rako
+.PHONY: check
+check: lint typecheck ## Run all checks (linting, formatting, and type checking).
 
 .PHONY: test
 test: ## Run tests quickly with the default Python.
@@ -113,18 +107,18 @@ install-dev: clean
 
 .PHONY: bump-patch
 bump-patch: ## Bump patch version (x.y.Z) and commit
-	@python -c "import re; content = open('python_rako/__version__.py').read().strip(); match = re.search(r'(\d+)\.(\d+)\.(\d+)', content); major, minor, patch = match.groups(); new_version = f'{major}.{minor}.{int(patch) + 1}'; open('python_rako/__version__.py', 'w').write(new_version); print(f'Bumped version to {new_version}')"
+	@python -c "import re; content = open('python_rako/__version__.py').read().strip(); match = re.search(r'(\d+)\.(\d+)\.(\d+)', content); major, minor, patch = match.groups(); new_version = f'{major}.{minor}.{int(patch) + 1}'; open('python_rako/__version__.py', 'w').write(f'__version__ = \"{new_version}\"\n'); print(f'Bumped version to {new_version}')"
 	@git add python_rako/__version__.py
-	@git commit -m "Bump version to $$(cat python_rako/__version__.py)"
+	@git commit -m "Bump version to $$(python -c "import re; content = open('python_rako/__version__.py').read(); match = re.search(r'\"([^\"]+)\"', content); print(match.group(1))")"
 
 .PHONY: bump-minor
 bump-minor: ## Bump minor version (x.Y.z) and commit
-	@python -c "import re; content = open('python_rako/__version__.py').read().strip(); match = re.search(r'(\d+)\.(\d+)\.(\d+)', content); major, minor, patch = match.groups(); new_version = f'{major}.{int(minor) + 1}.0'; open('python_rako/__version__.py', 'w').write(new_version); print(f'Bumped version to {new_version}')"
+	@python -c "import re; content = open('python_rako/__version__.py').read().strip(); match = re.search(r'(\d+)\.(\d+)\.(\d+)', content); major, minor, patch = match.groups(); new_version = f'{major}.{int(minor) + 1}.0'; open('python_rako/__version__.py', 'w').write(f'__version__ = \"{new_version}\"\n'); print(f'Bumped version to {new_version}')"
 	@git add python_rako/__version__.py
-	@git commit -m "Bump version to $$(cat python_rako/__version__.py)"
+	@git commit -m "Bump version to $$(python -c "import re; content = open('python_rako/__version__.py').read(); match = re.search(r'\"([^\"]+)\"', content); print(match.group(1))")"
 
 .PHONY: bump-major
 bump-major: ## Bump major version (X.y.z) and commit
-	@python -c "import re; content = open('python_rako/__version__.py').read().strip(); match = re.search(r'(\d+)\.(\d+)\.(\d+)', content); major, minor, patch = match.groups(); new_version = f'{int(major) + 1}.0.0'; open('python_rako/__version__.py', 'w').write(new_version); print(f'Bumped version to {new_version}')"
+	@python -c "import re; content = open('python_rako/__version__.py').read().strip(); match = re.search(r'(\d+)\.(\d+)\.(\d+)', content); major, minor, patch = match.groups(); new_version = f'{int(major) + 1}.0.0'; open('python_rako/__version__.py', 'w').write(f'__version__ = \"{new_version}\"\n'); print(f'Bumped version to {new_version}')"
 	@git add python_rako/__version__.py
-	@git commit -m "Bump version to $$(cat python_rako/__version__.py)"
+	@git commit -m "Bump version to $$(python -c "import re; content = open('python_rako/__version__.py').read(); match = re.search(r'\"([^\"]+)\"', content); print(match.group(1))")"

@@ -1,11 +1,15 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from typing import TYPE_CHECKING
 
 import asyncio_dgram
-from asyncio_dgram.aio import DatagramClient, DatagramServer
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncIterator
+
+    from asyncio_dgram.aio import DatagramClient, DatagramServer
 
 from python_rako.const import (
     SCENE_COMMAND_TO_NUMBER,
@@ -32,7 +36,7 @@ _LOGGER = logging.getLogger(__name__)
 
 @asynccontextmanager
 async def get_dg_listener(port: int, listen_host: str = "0.0.0.0") -> AsyncIterator[DatagramServer]:
-    server: DatagramServer = None
+    server: DatagramServer | None = None
     try:
         server = await asyncio_dgram.bind((listen_host, port))
         yield server
@@ -43,7 +47,7 @@ async def get_dg_listener(port: int, listen_host: str = "0.0.0.0") -> AsyncItera
 
 @asynccontextmanager
 async def get_dg_commander(host: str, port: int) -> AsyncIterator[DatagramClient]:
-    client: DatagramClient = None
+    client: DatagramClient | None = None
     try:
         client = await asyncio_dgram.connect((host, port))
         yield client
@@ -95,11 +99,8 @@ def deserialise_status_message(byte_list: list[int]) -> StatusMessage:
             brightness=data[1],
         )
 
-    if command == CommandType.SET_SCENE:
-        scene = data[1]
-    else:
-        # command is one of SC1_LEGACY, SC2_LEGACY, SC3_LEGACY, SC4_LEGACY
-        scene = SCENE_COMMAND_TO_NUMBER[command]
+    # command is one of SET_SCENE or SC1_LEGACY, SC2_LEGACY, SC3_LEGACY, SC4_LEGACY
+    scene = data[1] if command == CommandType.SET_SCENE else SCENE_COMMAND_TO_NUMBER[command]
 
     return SceneStatusMessage(
         room=room,
@@ -144,17 +145,14 @@ def command_to_byte_list(command: CommandUDP) -> list[int]:
         command.room % 256,  # low room number
         command.channel,  # channel
         command.command.value,  # command
-    ] + command.data
+        *command.data,
+    ]
 
-    byte_list: list[int] = (
-        [
-            command.message_type.value,
-        ]
-        + checksum_list
-        + [
-            calc_crc(checksum_list),
-        ]
-    )
+    byte_list: list[int] = [
+        command.message_type.value,
+        *checksum_list,
+        calc_crc(checksum_list),
+    ]
 
     return byte_list
 
@@ -177,11 +175,11 @@ def convert_to_brightness(scene_number: int) -> int:
 
 _scene_windows = {
     # rako_scene: (brightness_high, brightness_low)
-    1: dict(low=224, high=256),  # expect 255 (100%)
-    2: dict(low=160, high=224),  # expect 192 (75%)
-    3: dict(low=96, high=160),  # expect 128 (50%)
-    4: dict(low=1, high=96),  # expect 64 (25%)
-    0: dict(low=0, high=1),  # expect 0 (0%)
+    1: {"low": 224, "high": 256},  # expect 255 (100%)
+    2: {"low": 160, "high": 224},  # expect 192 (75%)
+    3: {"low": 96, "high": 160},  # expect 128 (50%)
+    4: {"low": 1, "high": 96},  # expect 64 (25%)
+    0: {"low": 0, "high": 1},  # expect 0 (0%)
 }
 
 
@@ -194,5 +192,5 @@ def convert_to_scene(brightness: int) -> int:
     :param brightness: int representing brightness 0-255
     """
 
-    scene = [k for k, v in _scene_windows.items() if v["low"] <= brightness < v["high"]][0]
+    scene = next(k for k, v in _scene_windows.items() if v["low"] <= brightness < v["high"])
     return scene

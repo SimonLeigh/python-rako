@@ -3,12 +3,10 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
-from collections.abc import AsyncGenerator, Generator
-from typing import Any
+from typing import TYPE_CHECKING, Any, cast
 
 import aiohttp
 import xmltodict
-from asyncio_dgram.aio import DatagramServer
 
 from python_rako.const import (
     COMMAND_SUCCESS_RESPONSE,
@@ -37,6 +35,11 @@ from python_rako.model import (
     RoomVentilation,
     SceneCache,
 )
+
+if TYPE_CHECKING:
+    from collections.abc import AsyncGenerator, Generator
+
+    from asyncio_dgram.aio import DatagramServer
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -176,16 +179,16 @@ class Bridge:
         ventilation: list[RoomVentilation | ChannelVentilation] = []
 
         for device in self.get_devices_from_discovery_xml(rako_xml):
-            if isinstance(device, (RoomLight, ChannelLight)):
+            if isinstance(device, RoomLight | ChannelLight):
                 lights.append(device)
-            elif isinstance(device, (RoomVentilation, ChannelVentilation)):
+            elif isinstance(device, RoomVentilation | ChannelVentilation):
                 ventilation.append(device)
 
         return lights, ventilation
 
     async def discover_lights(
         self, session: aiohttp.ClientSession, force_refresh: bool = False
-    ) -> AsyncGenerator[RoomLight | ChannelLight]:
+    ) -> AsyncGenerator[RoomLight | ChannelLight, None]:
         """Discover lights by fetching XML once and filtering for lights."""
         lights, _ = await self.discover_devices(session, force_refresh)
         for light in lights:
@@ -193,7 +196,7 @@ class Bridge:
 
     async def discover_ventilation(
         self, session: aiohttp.ClientSession, force_refresh: bool = False
-    ) -> AsyncGenerator[RoomVentilation | ChannelVentilation]:
+    ) -> AsyncGenerator[RoomVentilation | ChannelVentilation, None]:
         """Discover ventilation by fetching XML once and filtering for ventilation."""
         _, ventilation = await self.discover_devices(session, force_refresh)
         for vent in ventilation:
@@ -206,17 +209,17 @@ class Bridge:
             rako_xml = await self.get_rako_xml(session, force_refresh)
             info = self.get_bridge_info_from_discovery_xml(rako_xml)
         except (KeyError, ValueError) as ex:
-            raise RakoBridgeError(f"unsupported bridge: {ex}")
+            raise RakoBridgeError(f"unsupported bridge: {ex}") from ex
         except aiohttp.ClientError as ex:
-            raise RakoBridgeError(f"cannot connect to bridge: {ex}")
+            raise RakoBridgeError(f"cannot connect to bridge: {ex}") from ex
         return info
 
     @staticmethod
     def get_bridge_info_from_discovery_xml(xml: str) -> BridgeInfo:
         with _XML_PARSE_LOCK:
             xml_dict = xmltodict.parse(xml)
-        info = xml_dict["rako"].get("info", dict())
-        config = xml_dict["rako"].get("config", dict())
+        info = xml_dict["rako"].get("info", {})
+        config = xml_dict["rako"].get("config", {})
         return BridgeInfo(
             version=info.get("version"),
             buildDate=info.get("buildDate"),
@@ -233,7 +236,7 @@ class Bridge:
     @staticmethod
     def get_devices_from_discovery_xml(
         xml: str, device_types: str | list[str] | None = None
-    ) -> Generator[RoomLight | ChannelLight | RoomVentilation | ChannelVentilation]:
+    ) -> Generator[RoomLight | ChannelLight | RoomVentilation | ChannelVentilation, None, None]:
         # Handle different input types for backward compatibility
         if device_types is None or device_types == "All":
             target_types = {"Lights", "Ventilation"}
@@ -293,11 +296,13 @@ class Bridge:
             return None
 
         data, addr = resp
+        # Cast addr to correct type since asyncio-dgram lacks type hints
+        addr = cast("tuple[str, int]", addr)
         remote_ip, _ = addr
         if remote_ip != self.host:
             return None
 
-        byte_list = list(data)
+        byte_list = list(bytes(data))
         _LOGGER.debug("Received bytes: %s", byte_list)
         message = deserialise_byte_list(byte_list)
         _LOGGER.debug("Deserialised received message as: %s", message)
@@ -319,7 +324,7 @@ class Bridge:
                     _LOGGER.warning("Timeout waiting for cache response")
                     break
 
-                response = deserialise_byte_list(list(data))
+                response = deserialise_byte_list(list(bytes(data)))
                 if isinstance(response, EOFResponse):
                     break
                 if isinstance(response, SceneCache):

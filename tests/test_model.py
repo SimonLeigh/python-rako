@@ -44,7 +44,7 @@ def test_get_channel_levels():
     assert len(res) == 2
 
     res = list(level_cache.get_channel_levels(99, 99))
-    assert res == list()
+    assert res == []
 
 
 def test_command_scene_http():

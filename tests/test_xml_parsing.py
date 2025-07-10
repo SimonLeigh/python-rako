@@ -16,7 +16,7 @@ def test_xml_parsing():
 
     # Read the XML file
     xml_path = Path("tests/resources/rako3.xml")
-    with open(xml_path, encoding="utf-8") as f:
+    with xml_path.open(encoding="utf-8") as f:
         xml_content = f.read()
 
     print("=== Testing XML Parsing Logic ===")

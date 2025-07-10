@@ -11,7 +11,7 @@ from python_rako.helpers import get_dg_listener
 
 @pytest.mark.asyncio
 async def _test_set_room_scene(bridge: Bridge):
-    test_room_id = 5
+    test_room_id = 97
     test_scene = 1
 
     async def wait_for_response():
@@ -42,7 +42,7 @@ async def test_set_room_scene_http(http_bridge: Bridge):
 
 @pytest.mark.asyncio
 async def _test_set_room_brightness(bridge: Bridge):
-    test_room_id = 5
+    test_room_id = 97
     test_brightness = 150
 
     async def wait_for_response():
@@ -74,8 +74,8 @@ async def test_set_room_brightness_http(http_bridge: Bridge):
 
 
 async def _test_set_channel_brightness(bridge: Bridge):
-    test_room_id = 5
-    test_channel_id = 5
+    test_room_id = 97
+    test_channel_id = 1
     test_brightness = 150
 
     async def wait_for_response():

@@ -31,7 +31,7 @@ from python_rako.model import (  # noqa
 _LOGGER = logging.getLogger(__name__)
 
 
-class BridgeDescription(TypedDict, total=False):
+class BridgeDescription(TypedDict):
     host: str
     port: int
     name: str
@@ -42,15 +42,21 @@ async def discover_bridge() -> BridgeDescription:
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     server = await asyncio_dgram.from_socket(sock)
-    await server.send(b"D", ("255.255.255.255", RAKO_BRIDGE_DEFAULT_PORT))
-    msg, (host, port) = await server.recv()
-    bridge_description: BridgeDescription = {"host": host, "port": port}
+    await server.send(b"D", ("255.255.255.255", RAKO_BRIDGE_DEFAULT_PORT))  # type: ignore[call-arg]
+    msg, addr = await server.recv()  # type: ignore[misc]
+    host: str
+    port: int
+    host, port = addr  # type: ignore[misc]
     try:
         name, mac = msg.decode("utf8").split()
-        bridge_description["name"] = name
-        bridge_description["mac"] = mac
-    except ValueError:
-        raise ValueError(f"Couldn't interpret discovery response message: {msg}")
+        bridge_description: BridgeDescription = {
+            "host": host,
+            "port": port,
+            "name": name,
+            "mac": mac,
+        }
+    except ValueError as ex:
+        raise ValueError(f"Couldn't interpret discovery response message: {msg!r}") from ex
     return bridge_description
 
 

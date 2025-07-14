@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import threading
+import time
 from typing import TYPE_CHECKING, Any, cast
 
 import aiohttp
@@ -15,7 +16,7 @@ from python_rako.const import (
     MessageType,
     RequestType,
 )
-from python_rako.exceptions import RakoBridgeError
+from python_rako.exceptions import RakoBridgeError, RakoConnectionError, RakoCommandError
 from python_rako.helpers import (
     command_to_byte_list,
     deserialise_byte_list,
@@ -87,15 +88,36 @@ class BridgeCommanderUDP(_BridgeCommander):
         await self._send_command(command)
 
     async def _send_command(self, command: CommandUDP) -> None:
+        """Send command with retry logic."""
+        await self._send_command_with_retry(command, max_retries=2)
+
+    async def _send_command_with_retry(self, command: CommandUDP, max_retries: int = 2) -> bool:
+        """Send command with retry logic."""
         _LOGGER.debug("Sending command: %s", command)
         byte_list = command_to_byte_list(command)
-        async with get_dg_commander(self.host, self.port) as dg_client:
-            _LOGGER.debug("Sending command bytes: %s", byte_list)
-            await dg_client.send(bytes(byte_list))
-            data, _ = await dg_client.recv()
-
-        if data.decode("utf8").strip() != COMMAND_SUCCESS_RESPONSE:
-            _LOGGER.warning("Bad response after command %s %s", command, data)
+        
+        for attempt in range(max_retries + 1):
+            try:
+                async with get_dg_commander(self.host, self.port) as dg_client:
+                    _LOGGER.debug("Sending command bytes: %s (attempt %d)", byte_list, attempt + 1)
+                    await dg_client.send(bytes(byte_list))
+                    try:
+                        # Add timeout to prevent indefinite blocking
+                        data, _ = await asyncio.wait_for(dg_client.recv(), timeout=3.0)
+                        if data.decode("utf8").strip() != COMMAND_SUCCESS_RESPONSE:
+                            _LOGGER.warning("Bad response after command %s: %s", command, data)
+                        return True
+                    except TimeoutError:
+                        # Many bridges don't send consistent responses, just log and continue
+                        _LOGGER.debug("No response received for command %s (timeout after 3s)", command)
+                        return True  # Consider timeout as success for UDP commands
+            except (ConnectionError, OSError) as e:
+                if attempt == max_retries:
+                    _LOGGER.error("Command failed after %d attempts: %s", max_retries + 1, e)
+                    raise RakoConnectionError(f"Failed to send command after {max_retries + 1} attempts: {e}") from e
+                _LOGGER.warning("Command attempt %d failed, retrying: %s", attempt + 1, e)
+                await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
+        return False
 
 
 class BridgeCommanderHTTP(_BridgeCommander):
@@ -151,6 +173,7 @@ class Bridge:
         self.scene_cache: SceneCache = SceneCache()
         self._cached_xml: str | None = None
         self._xml_fetch_lock = asyncio.Lock()
+        self._last_cache_refresh: float = 0
 
     @property
     def _discovery_url(self) -> str:
@@ -334,6 +357,17 @@ class Bridge:
                 _LOGGER.debug("Cache response: %s", response)
 
         return level_cache, scene_cache
+
+    async def refresh_cache_if_stale(self, max_age_seconds: int = 300) -> None:
+        """Refresh level and scene cache if older than max_age_seconds."""
+        current_time = time.time()
+        if current_time - self._last_cache_refresh > max_age_seconds:
+            try:
+                self.level_cache, self.scene_cache = await self.get_cache_state()
+                self._last_cache_refresh = current_time
+                _LOGGER.debug("📚 Cache refreshed for bridge %s", self.mac)
+            except Exception as e:
+                _LOGGER.warning("Failed to refresh cache for bridge %s: %s", self.mac, e)
 
     async def set_room_scene(self, room_id: int, scene: int) -> None:
         """Set the scene of a room."""

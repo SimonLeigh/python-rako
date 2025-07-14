@@ -1,6 +1,9 @@
 from __future__ import annotations
 
+import asyncio
 import logging
+import socket
+import time
 from contextlib import asynccontextmanager
 from typing import TYPE_CHECKING
 
@@ -38,7 +41,13 @@ _LOGGER = logging.getLogger(__name__)
 async def get_dg_listener(port: int, listen_host: str = "0.0.0.0") -> AsyncIterator[DatagramServer]:
     server: DatagramServer | None = None
     try:
-        server = await asyncio_dgram.bind((listen_host, port))
+        # Create socket with broadcast capability for receiving status messages
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
+        sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        sock.bind((listen_host, port))
+        
+        server = await asyncio_dgram.from_socket(sock)
         yield server
     finally:
         if server:
@@ -194,3 +203,38 @@ def convert_to_scene(brightness: int) -> int:
 
     scene = next(k for k, v in _scene_windows.items() if v["low"] <= brightness < v["high"])
     return scene
+
+
+def get_predicted_channel_brightness(level_cache: LevelCache, room: int, channel: int, scene: int) -> int:
+    """Predict channel brightness from scene using cache, fallback to conversion."""
+    # Try cache first
+    cached_brightness = level_cache.get_channel_level(
+        RoomChannel(room, channel), scene
+    )
+    if cached_brightness > 0:
+        return cached_brightness
+    
+    # Fallback to scene-to-brightness conversion
+    return convert_to_brightness(scene)
+
+
+class UDPMessageRateLimit:
+    """Rate limiter for UDP message processing to prevent flooding."""
+    
+    def __init__(self, max_messages_per_second: int = 50):
+        self.max_messages = max_messages_per_second
+        self.message_times: list[float] = []
+        self.lock = asyncio.Lock()
+    
+    async def should_process_message(self) -> bool:
+        """Rate limit UDP message processing."""
+        async with self.lock:
+            now = time.time()
+            # Remove messages older than 1 second
+            self.message_times = [t for t in self.message_times if now - t < 1.0]
+            
+            if len(self.message_times) >= self.max_messages:
+                return False
+            
+            self.message_times.append(now)
+            return True

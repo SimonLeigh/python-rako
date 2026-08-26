@@ -31,6 +31,7 @@ from python_rako.protocol import (
     UnknownStatusMessage,
     calc_crc,
     decode_packet,
+    decode_scene_cache_hex,
     decode_status_message,
     encode_command,
     encode_custom_232,
@@ -464,3 +465,28 @@ def test_room_channel_helper():
     message = decode_status_message(CAPTURE_LEVEL_SET_LEGACY)
     assert message.room_channel.room_id == 6
     assert message.room_channel.channel_id == 1
+
+
+# ---------------------------------------------------------------------------
+# scenes.htm
+# ---------------------------------------------------------------------------
+
+
+def test_scenes_htm_matches_the_udp_cache_layout():
+    # v2.2.2 p.9: 0x0C1C is room 28 scene 3, 0x040C is room 12 scene 1.
+    assert decode_scene_cache_hex("0C1C040C") == {28: 3, 12: 1}
+
+
+def test_scenes_htm_handles_whitespace_markup_and_case():
+    assert decode_scene_cache_hex("\n0c1c 040C\r\n") == {28: 3, 12: 1}
+
+
+def test_scenes_htm_supports_ten_bit_rooms():
+    # room 1019 in scene 5 -> (5 << 10) | 1019
+    word = (5 << 10) | 1019
+    assert decode_scene_cache_hex(f"{word:04X}") == {1019: 5}
+
+
+@pytest.mark.parametrize("text", ["", "FFFF", "0000", "AB"])
+def test_scenes_htm_empty_and_filler_values(text):
+    assert decode_scene_cache_hex(text) == {}

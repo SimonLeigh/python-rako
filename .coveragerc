@@ -1,8 +1,10 @@
 [run]
 source = python_rako
+# Keep this in step with [tool.coverage.run] in pyproject.toml -- this file
+# takes precedence over it. __init__.py and bridge.py used to be omitted here,
+# which silently excluded the bridge API from the coverage gate.
 omit =
-    python_rako/__init__.py
-    python_rako/bridge.py
+    python_rako/__version__.py
 
 
 [report]

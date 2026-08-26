@@ -51,6 +51,7 @@ from python_rako.const import (
 )
 from python_rako.model import (
     ChannelStatusMessage,
+    SceneCache,
     SceneStatusMessage,
     StatusMessage,
 )
@@ -79,6 +80,7 @@ __all__ = [
     "UnknownStatusMessage",
     "calc_crc",
     "decode_packet",
+    "decode_scene_cache_hex",
     "decode_status_message",
     "encode_command",
     "encode_fade",
@@ -499,6 +501,30 @@ def _as_ascii(byte_list: Sequence[int]) -> str | None:
 # ---------------------------------------------------------------------------
 # Encoding
 # ---------------------------------------------------------------------------
+
+
+def decode_scene_cache_hex(text: str) -> SceneCache:
+    """Parse the bridge's ``scenes.htm`` body into a :class:`SceneCache`.
+
+    The page returns the live scene cache as a hex string, two bytes per room,
+    each 16-bit word being ``scene << 10 | room`` -- the same record layout as
+    the UDP ``'C'`` reply, which is why a 10-bit room number fits.  Words for
+    room 0 and the all-ones filler are skipped.
+
+    This is the reconciliation read of choice: it costs no UDP socket, so
+    polling can never contend with the status listener.
+    """
+    digits = "".join(c for c in text if c in "0123456789abcdefABCDEF")
+    scene_cache = SceneCache()
+    for index in range(0, len(digits) - 3, 4):
+        word = int(digits[index : index + 4], 16)
+        if word in (0x0000, 0xFFFF):
+            continue
+        room = word & 0x03FF
+        scene = word >> 10
+        if room:
+            scene_cache[room] = scene
+    return scene_cache
 
 
 def encode_command(

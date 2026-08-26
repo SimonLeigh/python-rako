@@ -9,14 +9,28 @@ from typing import TYPE_CHECKING, Any, cast
 import aiohttp
 import xmltodict
 
+from python_rako.commands import (
+    DEFAULT_RETRIES,
+    DEFAULT_VERIFY_TIMEOUT,
+    CommandSender,
+    CommandSpec,
+    EchoVerifier,
+    UdpCommandSender,
+    execute_command,
+    fade_command,
+    level_command,
+    scene_command,
+    stop_command,
+)
 from python_rako.const import (
     COMMAND_SUCCESS_RESPONSE,
     CommandType,
+    FadeDirection,
     Flags,
     MessageType,
     RequestType,
 )
-from python_rako.exceptions import RakoBridgeError, RakoConnectionError, RakoCommandError
+from python_rako.exceptions import RakoBridgeError, RakoCommandError, RakoConnectionError
 from python_rako.helpers import (
     command_to_byte_list,
     deserialise_byte_list,
@@ -36,11 +50,16 @@ from python_rako.model import (
     RoomVentilation,
     SceneCache,
 )
+from python_rako.protocol import decode_scene_cache_hex
+from python_rako.state import BridgeStateSnapshot
 
 if TYPE_CHECKING:
     from collections.abc import AsyncGenerator, Generator
 
     from asyncio_dgram.aio import DatagramServer
+
+    from python_rako.listener import StatusListener
+    from python_rako.model import StatusMessage
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -153,6 +172,36 @@ class BridgeCommanderHTTP(_BridgeCommander):
         await self.aiohttp_session.post(self._command_url, params=params)
 
 
+class _HttpCommandSender(CommandSender):
+    """Adapts the HTTP commander to the CommandSpec transport interface.
+
+    ``rako.cgi`` only exposes scene selection and channel levels, so anything
+    else (fades, stop, ident, store) has to go over UDP.  That is reported as an
+    error rather than silently switched, so a caller is never surprised about
+    which transport carried a command.
+    """
+
+    def __init__(self, commander: BridgeCommanderHTTP):
+        self._commander = commander
+
+    async def send(self, spec: CommandSpec) -> None:
+        if spec.command is CommandType.SET_SCENE and len(spec.data) > 1:
+            await self._commander.set_room_scene(spec.room, spec.data[1])
+            return
+        if spec.command is CommandType.SET_LEVEL and len(spec.data) > 1:
+            await self._commander.set_channel_brightness(
+                spec.room, spec.channel, spec.data[1]
+            )
+            return
+        if spec.command is CommandType.OFF:
+            await self._commander.set_room_scene(spec.room, 0)
+            return
+        raise RakoCommandError(
+            f"{spec.command.name} is not available over the HTTP transport; "
+            "use the UDP commander for this command"
+        )
+
+
 class Bridge:
     def __init__(
         self,
@@ -161,6 +210,9 @@ class Bridge:
         name: str,
         mac: str,
         bridge_commander: _BridgeCommander | None = None,
+        *,
+        listener: StatusListener | None = None,
+        verify_timeout: float = DEFAULT_VERIFY_TIMEOUT,
     ):
         self.host = host
         self.port = port
@@ -174,6 +226,72 @@ class Bridge:
         self._cached_xml: str | None = None
         self._xml_fetch_lock = asyncio.Lock()
         self._last_cache_refresh: float = 0
+        self.verify_timeout = verify_timeout
+        self._echo_verifier = EchoVerifier()
+        self._listener: StatusListener | None = None
+        self._command_sender: CommandSender | None = None
+        if listener is not None:
+            self.attach_listener(listener)
+
+    # -- echo verification -------------------------------------------------
+
+    @property
+    def listener(self) -> StatusListener | None:
+        """The status listener used to verify commands, if one is attached."""
+        return self._listener
+
+    def attach_listener(self, listener: StatusListener) -> None:
+        """Use ``listener``'s broadcasts to verify the commands we send.
+
+        Without a listener the ``set_*`` methods still work, but they cannot
+        confirm anything and say so rather than reporting false success.
+        """
+        self._listener = listener
+        self._echo_verifier.attach(listener)
+
+    def detach_listener(self) -> None:
+        self._echo_verifier.detach()
+        self._listener = None
+
+    @property
+    def _sender(self) -> CommandSender:
+        if self._command_sender is None:
+            if isinstance(self._bridge_commander, BridgeCommanderHTTP):
+                self._command_sender = _HttpCommandSender(self._bridge_commander)
+            else:
+                self._command_sender = UdpCommandSender(self.host, self.port)
+        return self._command_sender
+
+    async def send_command(
+        self,
+        spec: CommandSpec,
+        *,
+        verify: bool = True,
+        verify_timeout: float | None = None,
+        retries: int = DEFAULT_RETRIES,
+    ) -> StatusMessage | None:
+        """Send a command and return the bridge's echo confirming it happened.
+
+        Returns ``None`` when the command was not verified -- ``verify=False``,
+        no listener attached, or a command the bridge does not echo.  It never
+        claims success it cannot demonstrate.
+
+        :raises RakoCommandError: no matching broadcast arrived after the
+            initial send and ``retries`` resends.
+        """
+        return await execute_command(
+            self._sender,
+            spec,
+            verifier=self._echo_verifier if self._listener is not None else None,
+            verify=verify,
+            verify_timeout=self.verify_timeout if verify_timeout is None else verify_timeout,
+            retries=retries,
+        )
+
+    async def close(self) -> None:
+        """Release command-transport resources. Does not stop the listener."""
+        if self._command_sender is not None:
+            await self._command_sender.close()
 
     @property
     def _discovery_url(self) -> str:
@@ -369,14 +487,120 @@ class Bridge:
             except Exception as e:
                 _LOGGER.warning("Failed to refresh cache for bridge %s: %s", self.mac, e)
 
-    async def set_room_scene(self, room_id: int, scene: int) -> None:
-        """Set the scene of a room."""
-        await self._bridge_commander.set_room_scene(room_id, scene)
+    async def get_scene_cache_http(self, session: aiohttp.ClientSession) -> SceneCache:
+        """Read the live scene cache over HTTP from ``scenes.htm``.
 
-    async def set_room_brightness(self, room_id: int, brightness: int) -> None:
-        """Set the brightness of a room."""
-        await self._bridge_commander.set_room_brightness(room_id, brightness)
+        Preferred over the UDP query for reconciliation polling: it uses no UDP
+        socket, so it can never contend with the status listener.
+        """
+        url = f"http://{self.host}/scenes.htm"
+        try:
+            async with session.get(url) as response:
+                response.raise_for_status()
+                text = await response.text()
+        except aiohttp.ClientError as ex:
+            raise RakoBridgeError(f"cannot read scene cache from bridge: {ex}") from ex
+        scene_cache = decode_scene_cache_hex(text)
+        _LOGGER.debug("Scene cache from %s: %d rooms", url, len(scene_cache))
+        return scene_cache
 
-    async def set_channel_brightness(self, room_id: int, channel_id: int, brightness: int) -> None:
-        """Set the brightness of a channel."""
-        await self._bridge_commander.set_channel_brightness(room_id, channel_id, brightness)
+    async def get_state_snapshot(
+        self,
+        session: aiohttp.ClientSession | None = None,
+        *,
+        refresh_level_table: bool = False,
+    ) -> BridgeStateSnapshot:
+        """Build a full state snapshot from the bridge's caches.
+
+        The scene cache is read over HTTP when a session is supplied, falling
+        back to the UDP query.  The level table is read over UDP and then
+        reused, because scene *definitions* only change when a scene is stored
+        (watch for STORE broadcasts, or pass ``refresh_level_table=True``).
+
+        Rooms absent from the scene cache come back with ``scene=None`` and
+        channels of unknown level -- never as "off".
+        """
+        if refresh_level_table or not self.level_cache:
+            self.level_cache, _ = await self.get_cache_state(RequestType.LEVEL_CACHE)
+
+        scene_cache: SceneCache | None = None
+        if session is not None:
+            try:
+                scene_cache = await self.get_scene_cache_http(session)
+            except RakoBridgeError as ex:
+                _LOGGER.warning(
+                    "scenes.htm unavailable (%s); falling back to the UDP query", ex
+                )
+        if scene_cache is None:
+            _, scene_cache = await self.get_cache_state(RequestType.SCENE_CACHE)
+
+        self.scene_cache = scene_cache
+        return BridgeStateSnapshot.from_caches(scene_cache, self.level_cache)
+
+    async def set_room_scene(
+        self, room_id: int, scene: int, *, verify: bool = True
+    ) -> StatusMessage | None:
+        """Set the scene of a room; returns the bridge's echo.
+
+        .. note::
+           Since 0.5.0 this raises :class:`RakoCommandError` if a listener is
+           attached and the bridge never confirms the change.  Update your
+           state from the returned message rather than optimistically.
+        """
+        return await self.send_command(scene_command(room_id, scene), verify=verify)
+
+    async def set_room_level(
+        self, room_id: int, level: int, *, verify: bool = True
+    ) -> StatusMessage | None:
+        """Set the level of every channel in a room (channel 0)."""
+        return await self.set_channel_level(room_id, 0, level, verify=verify)
+
+    async def set_channel_level(
+        self, room_id: int, channel_id: int, level: int, *, verify: bool = True
+    ) -> StatusMessage | None:
+        """Set the level of a single channel; returns the bridge's echo."""
+        return await self.send_command(
+            level_command(room_id, channel_id, level), verify=verify
+        )
+
+    async def fade_up(
+        self, room_id: int, channel_id: int = 0, *, verify: bool = True
+    ) -> StatusMessage | None:
+        """Start fading up, exactly as holding a keypad's up button does.
+
+        Must be terminated with :meth:`stop_fade`.  No level is broadcast when
+        the fade stops, so the resulting level is genuinely unknown.
+        """
+        return await self.send_command(
+            fade_command(room_id, channel_id, direction=FadeDirection.UP),
+            verify=verify,
+        )
+
+    async def fade_down(
+        self, room_id: int, channel_id: int = 0, *, verify: bool = True
+    ) -> StatusMessage | None:
+        """Start fading down; must be terminated with :meth:`stop_fade`."""
+        return await self.send_command(
+            fade_command(room_id, channel_id, direction=FadeDirection.DOWN),
+            verify=verify,
+        )
+
+    async def stop_fade(
+        self, room_id: int, channel_id: int = 0, *, verify: bool = True
+    ) -> StatusMessage | None:
+        """Stop a running fade."""
+        return await self.send_command(stop_command(room_id, channel_id), verify=verify)
+
+    async def set_room_brightness(
+        self, room_id: int, brightness: int, *, verify: bool = True
+    ) -> StatusMessage | None:
+        """Deprecated alias for :meth:`set_room_level`."""
+        return await self.set_room_level(room_id, brightness, verify=verify)
+
+    async def set_channel_brightness(
+        self, room_id: int, channel_id: int, brightness: int, *, verify: bool = True
+    ) -> StatusMessage | None:
+        """Deprecated alias for :meth:`set_channel_level`."""
+        return await self.set_channel_level(
+            room_id, channel_id, brightness, verify=verify
+        )

@@ -16,6 +16,7 @@ from python_rako.model import (
     RoomChannel,
     SceneCache,
     SceneStatusMessage,
+    StatusMessage,
 )
 from python_rako.protocol import (
     Custom232Message,
@@ -25,6 +26,7 @@ from python_rako.protocol import (
     StopFadeMessage,
     StoreMessage,
     UnknownStatusMessage,
+    decode_packet,
     decode_status_message,
 )
 from python_rako.state import (
@@ -436,3 +438,45 @@ def test_room_channels_helper():
     snapshot = empty_snapshot().apply(SceneStatusMessage(6, 0, 2))
     channels = sorted(rc.channel_id for rc in snapshot.room_channels(6))
     assert channels == [0, 1, 2]
+
+
+# ---------------------------------------------------------------------------
+# Full-pipeline regression net (WP-1.4): every packet BRIDGE_BEHAVIOUR.md
+# recorded, through decode_packet and BridgeStateSnapshot.apply end to end.
+# ---------------------------------------------------------------------------
+
+
+def test_every_captured_packet_replays_through_decode_and_apply():
+    """The decoder/state regression net named in MODERNISATION_PLAN.md WP-1.4.
+
+    ``tests/test_protocol.py`` already pins the *decoded meaning* of every
+    packet captured during Phase 0 and ``test_replay_*`` above pins the state
+    that specific sequences of them produce. This closes the loop for every
+    individual capture at once: each one must survive
+    ``decode_packet -> BridgeStateSnapshot.apply`` -- the exact pipeline a
+    real ``StatusListener`` subscriber uses -- without raising, whether or not
+    the library models the instruction (an ``UnknownStatusMessage`` still
+    round-trips: ``apply`` accepts it and leaves state unchanged).
+
+    This is deliberately the *only* place that imports ``ALL_CAPTURES`` from
+    ``test_protocol``, rather than a second, duplicated list of raw bytes --
+    see the WP-1.4 PR description for why no ``tests/resources/captures/``
+    fixtures were added on top of it.
+    """
+    # Imported lazily so a failure to import test_protocol.py (e.g. it being
+    # renamed) shows up as a clear collection error against *this* file too.
+    from tests.test_protocol import ALL_CAPTURES
+
+    assert len(ALL_CAPTURES) >= 10, "expected the full Phase-0 capture set"
+
+    for packet in ALL_CAPTURES:
+        decoded = decode_packet(packet)
+        assert isinstance(decoded, StatusMessage), f"not a status message: {packet}"
+
+        before = empty_snapshot()
+        after = before.apply(decoded)
+        # apply() never raises and always returns *a* snapshot -- either an
+        # updated one, or (for messages carrying no state, e.g. IDENT/STORE
+        # with no level implication) the same object back.
+        assert isinstance(after, type(before))
+        assert after.level_table is before.level_table

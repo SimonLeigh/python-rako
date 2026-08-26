@@ -9,8 +9,8 @@ Phase 0.
 
 :class:`StatusListener` is built around that: the receive loop is supervised,
 any exception restarts it with jittered exponential backoff, and health is
-observable (:attr:`is_running`, :attr:`last_message_at`, :attr:`restart_count`)
-so a consumer can mark entities unavailable rather than lie about them.
+observable through :attr:`StatusListener.health` so a consumer can mark
+entities unavailable rather than lie about them.
 
 Two behaviours are dictated by observation rather than the specification:
 
@@ -31,7 +31,7 @@ import random
 import socket
 import time
 from collections.abc import AsyncIterator, Awaitable, Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from typing import Any
 
 import asyncio_dgram
@@ -52,17 +52,26 @@ DEFAULT_BACKOFF_MAX = 30.0
 MessageCallback = Callable[[StatusMessage], Any | Awaitable[Any]]
 
 
-@dataclass(frozen=True)
+@dataclass
 class ListenerHealth:
-    """A point-in-time snapshot of listener health, safe to log or expose."""
+    """The listener's health and diagnostic counters.
 
-    is_running: bool
-    last_message_at: float | None
-    restart_count: int
+    A listener keeps exactly one of these and mutates it in place; reading
+    :attr:`StatusListener.health` hands back a copy, so a value you stored will
+    not change under you.
+    """
+
+    is_running: bool = False
+    last_message_at: float | None = None
+    restart_count: int = 0
     last_error: str | None = None
+    #: Broadcasts dropped because the bridge re-sent the same event.
     suppressed_duplicates: int = 0
+    #: Datagrams discarded because they came from some other host.
     ignored_packets: int = 0
+    #: Datagrams from the bridge that were not status broadcasts.
     non_status_packets: int = 0
+    #: Status messages accepted, after de-duplication.
     messages_received: int = 0
 
     @property
@@ -76,6 +85,10 @@ class ListenerHealth:
 class _Subscription:
     callback: MessageCallback
     is_async: bool = field(default=False)
+    #: Echo verification subscribes this way: it must see a message even when
+    #: an identical one arrived moments earlier, or a command's confirmation
+    #: can be swallowed by de-duplication.
+    include_duplicates: bool = False
 
 
 class StatusListener:
@@ -128,84 +141,54 @@ class StatusListener:
         self._callback_tasks: set[asyncio.Task[Any]] = set()
         self._recent: dict[tuple[Any, ...], float] = {}
         self._local_port: int | None = None
-
-        # Health / diagnostics
-        self._is_running = False
-        self._last_message_at: float | None = None
-        self._restart_count = 0
-        self._last_error: str | None = None
-        self._suppressed_duplicates = 0
-        self._ignored_packets = 0
-        self._non_status_packets = 0
-        self._messages_received = 0
+        self._health = ListenerHealth()
 
     # -- health ------------------------------------------------------------
 
     @property
+    def health(self) -> ListenerHealth:
+        """A copy of the listener's health and counters.
+
+        Everything diagnostic lives here -- ``restart_count``,
+        ``suppressed_duplicates``, ``ignored_packets``, ``non_status_packets``,
+        ``messages_received``, ``last_error`` -- rather than being mirrored
+        across a dozen properties.
+        """
+        return replace(self._health)
+
+    @property
     def is_running(self) -> bool:
         """Whether the socket is currently bound and receiving."""
-        return self._is_running
+        return self._health.is_running
 
     @property
     def last_message_at(self) -> float | None:
         """``time.monotonic()`` of the last accepted status message."""
-        return self._last_message_at
+        return self._health.last_message_at
 
     @property
     def restart_count(self) -> int:
         """How many times the receive loop has been rebuilt after an error."""
-        return self._restart_count
-
-    @property
-    def suppressed_duplicates(self) -> int:
-        """Messages dropped because the bridge re-broadcast the same event."""
-        return self._suppressed_duplicates
-
-    @property
-    def ignored_packets(self) -> int:
-        """Datagrams discarded because they came from another host."""
-        return self._ignored_packets
-
-    @property
-    def non_status_packets(self) -> int:
-        """Datagrams from the bridge that were not status broadcasts."""
-        return self._non_status_packets
-
-    @property
-    def messages_received(self) -> int:
-        """Status messages accepted (after de-duplication)."""
-        return self._messages_received
+        return self._health.restart_count
 
     @property
     def local_port(self) -> int | None:
         """The port actually bound; useful when constructed with ``port=0``."""
         return self._local_port
 
-    def health(self) -> ListenerHealth:
-        return ListenerHealth(
-            is_running=self._is_running,
-            last_message_at=self._last_message_at,
-            restart_count=self._restart_count,
-            last_error=self._last_error,
-            suppressed_duplicates=self._suppressed_duplicates,
-            ignored_packets=self._ignored_packets,
-            non_status_packets=self._non_status_packets,
-            messages_received=self._messages_received,
-        )
-
     def _publish_health(self) -> None:
         if self._on_health_change is None:
             return
         try:
-            self._on_health_change(self.health())
+            self._on_health_change(self.health)
         except Exception:  # pragma: no cover - defensive
             _LOGGER.exception("Rako listener health callback failed")
 
     def _set_running(self, running: bool, error: str | None = None) -> None:
-        if running == self._is_running and error == self._last_error:
+        if running == self._health.is_running and error == self._health.last_error:
             return
-        self._is_running = running
-        self._last_error = error
+        self._health.is_running = running
+        self._health.last_error = error
         self._publish_health()
 
     # -- lifecycle ---------------------------------------------------------
@@ -249,14 +232,26 @@ class StatusListener:
 
     # -- subscription ------------------------------------------------------
 
-    def subscribe(self, callback: MessageCallback) -> Callable[[], None]:
+    def subscribe(
+        self, callback: MessageCallback, *, include_duplicates: bool = False
+    ) -> Callable[[], None]:
         """Register ``callback`` for every accepted message.
 
         The callback may be sync or async.  A callback that raises is logged
         and skipped: it can never take down the loop or the other subscribers.
         Returns a handle that unsubscribes when called.
+
+        Pass ``include_duplicates=True`` to receive messages the de-duplication
+        window would otherwise suppress.  Echo verification needs this: two
+        identical broadcasts inside the window may be one keypad event repeated
+        *or* the confirmation of a command we just sent, and dropping the second
+        would make a command that worked look like one that failed.
         """
-        subscription = _Subscription(callback, is_async=asyncio.iscoroutinefunction(callback))
+        subscription = _Subscription(
+            callback,
+            is_async=asyncio.iscoroutinefunction(callback),
+            include_duplicates=include_duplicates,
+        )
         self._subscriptions.append(subscription)
 
         def unsubscribe() -> None:
@@ -333,11 +328,11 @@ class StatusListener:
             except asyncio.CancelledError:
                 raise
             except Exception as err:  # supervision is the whole point
-                self._last_error = f"{type(err).__name__}: {err}"
+                self._health.last_error = f"{type(err).__name__}: {err}"
                 _LOGGER.exception("Rako listener failed; restarting")
             finally:
                 self._close_endpoint()
-                self._set_running(False, self._last_error)
+                self._set_running(False, self._health.last_error)
 
             if first_attempt and not bound.done():
                 bound.set_result(None)
@@ -345,14 +340,14 @@ class StatusListener:
             if self._stopping.is_set():
                 break
 
-            self._restart_count += 1
+            self._health.restart_count += 1
             # Jitter so several listeners recovering from the same network
             # event do not all retry in lockstep.
             delay = min(backoff, self.backoff_max) * (0.5 + random.random())  # noqa: S311
             _LOGGER.warning(
                 "Rako listener restarting in %.2fs (restart #%d)",
                 delay,
-                self._restart_count,
+                self._health.restart_count,
             )
             self._publish_health()
             try:
@@ -376,7 +371,7 @@ class StatusListener:
             # Phones running the Rako app broadcast discovery pings here; count
             # them so "nothing is arriving" can be told from "the wrong things
             # are arriving".
-            self._ignored_packets += 1
+            self._health.ignored_packets += 1
             _LOGGER.debug("Ignoring datagram from %s", remote_host)
             return
 
@@ -387,18 +382,21 @@ class StatusListener:
             return
 
         if isinstance(packet, NonStatusPacket):
-            self._non_status_packets += 1
+            self._health.non_status_packets += 1
             _LOGGER.debug("Non-status packet from bridge: %s", packet)
             return
 
         now = time.monotonic()
+        self._health.last_message_at = now
         if self._is_duplicate(packet, now):
-            self._suppressed_duplicates += 1
+            self._health.suppressed_duplicates += 1
             _LOGGER.debug("Suppressed duplicate broadcast: %s", packet)
+            # Still offered to subscribers that asked for duplicates, so a
+            # pending echo waiter can be satisfied by it.
+            self._dispatch(packet, duplicate=True)
             return
 
-        self._last_message_at = now
-        self._messages_received += 1
+        self._health.messages_received += 1
         self._dispatch(packet)
 
     def _is_duplicate(self, message: StatusMessage, now: float) -> bool:
@@ -413,15 +411,18 @@ class StatusListener:
             self._recent[key] = now
         return previous is not None and (now - previous) < self.dedupe_window
 
-    def _dispatch(self, message: StatusMessage) -> None:
-        for queue in self._queues:
-            if queue.full():
-                with contextlib.suppress(asyncio.QueueEmpty):
-                    queue.get_nowait()
-            with contextlib.suppress(asyncio.QueueFull):
-                queue.put_nowait(message)
+    def _dispatch(self, message: StatusMessage, *, duplicate: bool = False) -> None:
+        if not duplicate:
+            for queue in self._queues:
+                if queue.full():
+                    with contextlib.suppress(asyncio.QueueEmpty):
+                        queue.get_nowait()
+                with contextlib.suppress(asyncio.QueueFull):
+                    queue.put_nowait(message)
 
         for subscription in list(self._subscriptions):
+            if duplicate and not subscription.include_duplicates:
+                continue
             if subscription.is_async:
                 self._spawn(subscription.callback(message))  # type: ignore[arg-type]
                 continue

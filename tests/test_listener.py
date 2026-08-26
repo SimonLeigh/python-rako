@@ -90,7 +90,7 @@ async def test_receives_and_decodes_a_broadcast(listener, sender):
     await _settle()
 
     assert received == [ChannelStatusMessage(7, 2, 255)]
-    assert listener.messages_received == 1
+    assert listener.health.messages_received == 1
     assert listener.last_message_at is not None
 
 
@@ -161,8 +161,8 @@ async def test_packets_from_other_hosts_are_ignored_but_counted(sender):
         await _settle()
 
         assert received == []
-        assert listener.ignored_packets == 1
-        assert listener.messages_received == 0
+        assert listener.health.ignored_packets == 1
+        assert listener.health.messages_received == 0
     finally:
         await listener.stop()
 
@@ -176,7 +176,7 @@ async def test_non_status_packets_from_the_bridge_are_counted_not_delivered(list
     await _settle()
 
     assert received == []
-    assert listener.non_status_packets == 1
+    assert listener.health.non_status_packets == 1
     assert listener.is_running
 
 
@@ -204,7 +204,7 @@ async def test_identical_messages_inside_the_window_are_suppressed(listener, sen
     await _settle()
 
     assert len(received) == 1
-    assert listener.suppressed_duplicates == 1
+    assert listener.health.suppressed_duplicates == 1
 
 
 async def test_different_messages_are_never_suppressed(listener, sender):
@@ -216,7 +216,7 @@ async def test_different_messages_are_never_suppressed(listener, sender):
     await _settle()
 
     assert len(received) == 2
-    assert listener.suppressed_duplicates == 0
+    assert listener.health.suppressed_duplicates == 0
 
 
 async def test_repeats_outside_the_window_are_delivered(sender):
@@ -230,7 +230,7 @@ async def test_repeats_outside_the_window_are_delivered(sender):
         sender.sendto(FADE_R9, (LOOPBACK, listener.local_port))
         await _settle()
         assert len(received) == 2
-        assert listener.suppressed_duplicates == 0
+        assert listener.health.suppressed_duplicates == 0
     finally:
         await listener.stop()
 
@@ -395,7 +395,7 @@ async def test_health_callback_reports_transitions(sender):
         await _settle(0.3)
         assert any(h.is_running is False for h in seen)
         assert any(h.last_error and "simulated" in h.last_error for h in seen)
-        assert listener.health().restart_count >= 1
+        assert listener.health.restart_count >= 1
     finally:
         await listener.stop()
 
@@ -444,12 +444,64 @@ async def test_start_is_idempotent_and_stop_is_safe_twice(listener):
 async def test_health_snapshot_fields(listener, sender):
     sender.sendto(SET_LEVEL_R7_C2_255, (LOOPBACK, listener.local_port))
     await _settle()
-    health = listener.health()
+    health = listener.health
     assert health.is_running
     assert health.messages_received == 1
     assert health.restart_count == 0
     assert health.seconds_since_last_message is not None
     assert health.seconds_since_last_message < 5
 
-    idle = ListenerHealth(is_running=False, last_message_at=None, restart_count=0)
+    idle = ListenerHealth()
     assert idle.seconds_since_last_message is None
+    assert idle.is_running is False
+
+
+async def test_health_is_a_copy_not_a_live_handle(listener, sender):
+    """A stored health reading must not change under the caller."""
+    before = listener.health
+    sender.sendto(SET_LEVEL_R7_C2_255, (LOOPBACK, listener.local_port))
+    await _settle()
+    assert before.messages_received == 0
+    assert listener.health.messages_received == 1
+
+
+# ---------------------------------------------------------------------------
+# Duplicate-aware subscribers
+# ---------------------------------------------------------------------------
+
+
+async def test_include_duplicates_subscribers_see_suppressed_messages(listener, sender):
+    """Echo verification relies on this: a repeat may be our confirmation."""
+    normal: list = []
+    everything: list = []
+    listener.subscribe(normal.append)
+    listener.subscribe(everything.append, include_duplicates=True)
+
+    sender.sendto(FADE_R9, (LOOPBACK, listener.local_port))
+    await _settle(0.05)
+    sender.sendto(FADE_R9, (LOOPBACK, listener.local_port))
+    await _settle()
+
+    assert len(normal) == 1
+    assert len(everything) == 2
+    assert listener.health.suppressed_duplicates == 1
+
+
+async def test_duplicates_do_not_reach_the_async_iterator(listener, sender):
+    received: list = []
+
+    async def consume():
+        async for message in listener.messages():
+            received.append(message)
+
+    task = asyncio.create_task(consume())
+    await _settle(0.05)
+    sender.sendto(FADE_R9, (LOOPBACK, listener.local_port))
+    await _settle(0.05)
+    sender.sendto(FADE_R9, (LOOPBACK, listener.local_port))
+    await _settle()
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+    assert len(received) == 1

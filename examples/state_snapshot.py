@@ -32,9 +32,7 @@ def print_snapshot(snapshot) -> None:
         scene = snapshot.room_scene(room)
         scene_text = "unknown" if scene is None else f"scene {scene}"
         print(f"room {room}: {scene_text}")
-        for room_channel in sorted(
-            snapshot.room_channels(room), key=lambda rc: rc.channel_id
-        ):
+        for room_channel in sorted(snapshot.room_channels(room), key=lambda rc: rc.channel_id):
             state = snapshot.channels[room_channel]
             level = "unknown" if state.level is None else state.level
             estimated = " (estimated)" if state.is_estimated else ""
@@ -71,8 +69,7 @@ async def main(host: str) -> None:
                 changed = [
                     rc
                     for rc, state in snapshot.channels.items()
-                    if before.get(rc) != state
-                    and state.source is StateSource.SCENE_DERIVED
+                    if before.get(rc) != state and state.source is StateSource.SCENE_DERIVED
                 ]
                 print(f"=== reconciled; {len(changed)} channels corrected ===")
         finally:

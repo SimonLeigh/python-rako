@@ -182,17 +182,9 @@ class CommandSpec:
             return MatchQuality.NONE
 
         if self.command is CommandType.STOP_FADING:
-            return (
-                MatchQuality.EXACT
-                if isinstance(message, StopFadeMessage)
-                else MatchQuality.NONE
-            )
+            return MatchQuality.EXACT if isinstance(message, StopFadeMessage) else MatchQuality.NONE
 
-        return (
-            MatchQuality.EXACT
-            if message.command is self.command
-            else MatchQuality.NONE
-        )
+        return MatchQuality.EXACT if message.command is self.command else MatchQuality.NONE
 
 
 #: Commands the bridge is known (or expected) to echo as a status broadcast.
@@ -221,27 +213,21 @@ _ECHOING_COMMANDS = frozenset(
 
 def scene_command(room: int, scene: int, channel: int = 0) -> CommandSpec:
     """Select a scene for a room."""
-    return CommandSpec(
-        room, channel, CommandType.SET_SCENE, (FLAG_USE_DEFAULT_FADE_RATE, scene)
-    )
+    return CommandSpec(room, channel, CommandType.SET_SCENE, (FLAG_USE_DEFAULT_FADE_RATE, scene))
 
 
 def level_command(room: int, channel: int, level: int) -> CommandSpec:
     """Drive a channel to an absolute level."""
     if not 0 <= level <= 255:
         raise ValueError(f"level must be 0-255, got {level}")
-    return CommandSpec(
-        room, channel, CommandType.SET_LEVEL, (FLAG_USE_DEFAULT_FADE_RATE, level)
-    )
+    return CommandSpec(room, channel, CommandType.SET_LEVEL, (FLAG_USE_DEFAULT_FADE_RATE, level))
 
 
 def fade_command(
     room: int, channel: int = 0, *, direction: FadeDirection = FadeDirection.UP
 ) -> CommandSpec:
     """Start a fade; must be terminated with :func:`stop_command`."""
-    command = (
-        CommandType.FADE_UP if direction is FadeDirection.UP else CommandType.FADE_DOWN
-    )
+    command = CommandType.FADE_UP if direction is FadeDirection.UP else CommandType.FADE_DOWN
     return CommandSpec(room, channel, command)
 
 
@@ -303,9 +289,7 @@ class EchoVerifier:
                 continue
             # Best match wins; ties go to the oldest command (FIFO).
             if quality > best_quality or (
-                quality == best_quality
-                and best is not None
-                and waiter.sequence < best.sequence
+                quality == best_quality and best is not None and waiter.sequence < best.sequence
             ):
                 best, best_quality = waiter, quality
         if best is not None:

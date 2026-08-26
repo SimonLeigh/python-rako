@@ -94,6 +94,31 @@ def test_deserialise_scene_cache_message():
     assert payload_result == exp_obj
 
 
+@pytest.mark.parametrize(
+    "in_bytes,exp_obj",
+    [
+        # docs/BRIDGE_BEHAVIOUR.md fact 6: "43 03 0C 1C D5" -> room 28 scene 3
+        ([67, 3, 12, 28, 213], SceneCache({28: 3})),
+        # "43 05 0C 1C 04 0C C3" -> room 28 scene 3 + room 12 scene 1
+        ([67, 5, 12, 28, 4, 12, 195], SceneCache({28: 3, 12: 1})),
+        # synthetic: room 300 (10-bit, > 255) scene 2 -> hi=0x09, lo=0x2C
+        ([67, 3, 9, 44, 200], SceneCache({300: 2})),
+    ],
+    ids=[
+        "doc example: room 28 scene 3",
+        "doc example: room 28 scene 3 + room 12 scene 1",
+        "synthetic extended room: room 300 scene 2 (10-bit room id)",
+    ],
+)
+def test_deserialise_scene_cache_message_10bit_room(in_bytes, exp_obj):
+    """Scene cache 2-byte record is `scene<<10 | room` (10-bit room, per
+    docs/BRIDGE_BEHAVIOUR.md fact 6) -- rooms above 255 must round-trip
+    correctly, not just the low byte.
+    """
+    payload_result = deserialise_byte_list(in_bytes)
+    assert payload_result == exp_obj
+
+
 def test_deserialise_eof_message():
     payload_result = deserialise_byte_list([88, 255])
     assert payload_result == EOFResponse()

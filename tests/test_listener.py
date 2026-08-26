@@ -167,9 +167,7 @@ async def test_packets_from_other_hosts_are_ignored_but_counted(sender):
         await listener.stop()
 
 
-async def test_non_status_packets_from_the_bridge_are_counted_not_delivered(
-    listener, sender
-):
+async def test_non_status_packets_from_the_bridge_are_counted_not_delivered(listener, sender):
     """Phones on the LAN broadcast discovery pings; they are not errors."""
     received: list = []
     listener.subscribe(received.append)
@@ -222,9 +220,7 @@ async def test_different_messages_are_never_suppressed(listener, sender):
 
 
 async def test_repeats_outside_the_window_are_delivered(sender):
-    listener = StatusListener(
-        LOOPBACK, port=0, listen_host=LOOPBACK, dedupe_window=0.05
-    )
+    listener = StatusListener(LOOPBACK, port=0, listen_host=LOOPBACK, dedupe_window=0.05)
     await listener.start()
     try:
         received: list = []
@@ -408,9 +404,7 @@ async def test_a_raising_health_callback_does_not_break_the_listener(sender):
     def boom(_health):
         raise RuntimeError("health callback exploded")
 
-    listener = StatusListener(
-        LOOPBACK, port=0, listen_host=LOOPBACK, on_health_change=boom
-    )
+    listener = StatusListener(LOOPBACK, port=0, listen_host=LOOPBACK, on_health_change=boom)
     await listener.start()
     try:
         assert listener.is_running

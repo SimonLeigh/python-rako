@@ -131,9 +131,7 @@ class StatusMessage:
     command: CommandType | int | None = field(default=None, kw_only=True, compare=False)
     data: tuple[int, ...] = field(default=(), kw_only=True, compare=False)
     flags: int | None = field(default=None, kw_only=True, compare=False)
-    origin: MessageOrigin = field(
-        default=MessageOrigin.UNKNOWN, kw_only=True, compare=False
-    )
+    origin: MessageOrigin = field(default=MessageOrigin.UNKNOWN, kw_only=True, compare=False)
     raw: tuple[int, ...] = field(default=(), kw_only=True, compare=False, repr=False)
 
     @property

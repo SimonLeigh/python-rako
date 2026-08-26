@@ -4,7 +4,7 @@ import asyncio
 import logging
 import socket
 from asyncio.trsock import TransportSocket  # noqa
-from typing import TypedDict
+from typing import TypedDict, cast
 
 import asyncio_dgram
 
@@ -32,6 +32,7 @@ from python_rako.exceptions import (  # noqa
     RakoBridgeError,
     RakoCommandError,
     RakoConnectionError,
+    RakoDiscoveryError,
 )
 from python_rako.listener import ListenerHealth, StatusListener  # noqa
 from python_rako.model import (  # noqa
@@ -89,26 +90,44 @@ class BridgeDescription(TypedDict):
     mac: str
 
 
-async def discover_bridge() -> BridgeDescription:
+async def discover_bridge(timeout: float = 5.0) -> BridgeDescription:
+    """Broadcast a discovery request and wait for a bridge to respond.
+
+    Raises RakoDiscoveryError if no reply arrives within `timeout` seconds, or
+    the reply can't be interpreted as a bridge discovery response.
+    """
     sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
     sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
     server = await asyncio_dgram.from_socket(sock)
-    await server.send(b"D", ("255.255.255.255", RAKO_BRIDGE_DEFAULT_PORT))  # type: ignore[call-arg]
-    msg, addr = await server.recv()  # type: ignore[misc]
-    host: str
-    port: int
-    host, port = addr  # type: ignore[misc]
     try:
-        name, mac = msg.decode("utf8").split()
+        await server.send(b"D", ("255.255.255.255", RAKO_BRIDGE_DEFAULT_PORT))  # type: ignore[call-arg]
+        try:
+            msg, addr = await asyncio.wait_for(server.recv(), timeout=timeout)  # type: ignore[misc]
+        except TimeoutError as ex:
+            raise RakoDiscoveryError(
+                f"No bridge discovery response received within {timeout}s"
+            ) from ex
+
+        host: str
+        port: int
+        # asyncio-dgram lacks type hints for the address tuple returned by recv().
+        host, port = cast("tuple[str, int]", addr)
+        try:
+            name, mac = msg.decode("utf8").split()
+        except (UnicodeDecodeError, ValueError) as ex:
+            raise RakoDiscoveryError(
+                f"Couldn't interpret discovery response message: {msg!r}"
+            ) from ex
+
         bridge_description: BridgeDescription = {
             "host": host,
             "port": port,
             "name": name,
             "mac": mac,
         }
-    except ValueError as ex:
-        raise ValueError(f"Couldn't interpret discovery response message: {msg!r}") from ex
-    return bridge_description
+        return bridge_description
+    finally:
+        server.close()
 
 
 def main() -> None:

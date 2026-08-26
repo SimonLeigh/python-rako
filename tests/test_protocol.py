@@ -244,7 +244,9 @@ def test_store_ident_custom232_and_holiday():
 
 
 def test_ten_bit_room_numbers_round_trip():
-    packet = encode_command(1019, 3, CommandType.SET_LEVEL, [1, 64], message_type=MessageType.STATUS)
+    packet = encode_command(
+        1019, 3, CommandType.SET_LEVEL, [1, 64], message_type=MessageType.STATUS
+    )
     assert packet[2] == 0x03  # room high bits
     message = decode_status_message(packet)
     assert message == ChannelStatusMessage(1019, 3, 64)
@@ -268,9 +270,7 @@ def test_sensor_origin_from_flags_bit3():
 def test_messages_without_a_flags_byte_have_unknown_origin():
     assert decode_status_message(CAPTURE_SC2_LEGACY).origin is MessageOrigin.UNKNOWN
     assert decode_status_message(CAPTURE_STOP).origin is MessageOrigin.UNKNOWN
-    assert (
-        decode_status_message(CAPTURE_LEVEL_SET_LEGACY).origin is MessageOrigin.UNKNOWN
-    )
+    assert decode_status_message(CAPTURE_LEVEL_SET_LEGACY).origin is MessageOrigin.UNKNOWN
 
 
 # ---------------------------------------------------------------------------

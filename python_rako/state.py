@@ -167,17 +167,13 @@ class BridgeStateSnapshot:
             if room_channel.room_id in rooms:
                 continue
             rooms.setdefault(room_channel.room_id, RoomState(None, now))
-            channels[room_channel] = ChannelState(
-                None, StateSource.UNKNOWN_AFTER_FADE, now
-            )
+            channels[room_channel] = ChannelState(None, StateSource.UNKNOWN_AFTER_FADE, now)
             channels.setdefault(
                 RoomChannel(room_channel.room_id, 0),
                 ChannelState(None, StateSource.UNKNOWN_AFTER_FADE, now),
             )
 
-        return cls(
-            rooms=rooms, channels=channels, level_table=level_cache, updated_at=now
-        )
+        return cls(rooms=rooms, channels=channels, level_table=level_cache, updated_at=now)
 
     def with_restored(
         self, room: int, channel: int, level: int | None, *, now: float | None = None
@@ -189,9 +185,7 @@ class BridgeStateSnapshot:
         """
         now = time.time() if now is None else now
         channels = dict(self.channels)
-        channels[RoomChannel(room, channel)] = ChannelState(
-            level, StateSource.RESTORED, now
-        )
+        channels[RoomChannel(room, channel)] = ChannelState(level, StateSource.RESTORED, now)
         return replace(self, channels=channels, updated_at=now)
 
     # -- the push path -----------------------------------------------------
@@ -294,9 +288,7 @@ class BridgeStateSnapshot:
     ) -> BridgeStateSnapshot:
         """Replace the scene->level table (e.g. after a STORE broadcast)."""
         now = time.time() if now is None else now
-        return replace(
-            self, level_table=level_table, level_table_stale=False, updated_at=now
-        )
+        return replace(self, level_table=level_table, level_table_stale=False, updated_at=now)
 
     # -- the poll path -----------------------------------------------------
 

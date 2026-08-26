@@ -314,9 +314,7 @@ _FLAG_COMMANDS = frozenset(
 _LEGACY_SCENE_COMMANDS = frozenset(SCENE_COMMAND_TO_NUMBER)
 
 
-def decode_status_message(
-    byte_list: Sequence[int], *, strict: bool = False
-) -> StatusMessage:
+def decode_status_message(byte_list: Sequence[int], *, strict: bool = False) -> StatusMessage:
     """Decode one ``'S'`` status broadcast into a typed message.
 
     ``strict=True`` raises :class:`ValueError` on a checksum mismatch; the
@@ -353,9 +351,7 @@ def decode_status_message(
             channel,
             list(data),
         )
-        return UnknownStatusMessage(
-            room, channel, command=raw_command, data=data, raw=raw
-        )
+        return UnknownStatusMessage(room, channel, command=raw_command, data=data, raw=raw)
 
     flags = data[0] if (command in _FLAG_COMMANDS and data) else None
     common: dict[str, Any] = {
@@ -368,9 +364,7 @@ def decode_status_message(
 
     if command in _LEGACY_SCENE_COMMANDS:
         # OFF / SC1-SC4: the scene is encoded in the instruction itself.
-        return SceneStatusMessage(
-            room, channel, SCENE_COMMAND_TO_NUMBER[command], **common
-        )
+        return SceneStatusMessage(room, channel, SCENE_COMMAND_TO_NUMBER[command], **common)
 
     if command is CommandType.SET_SCENE:
         if len(data) < 2:
@@ -391,16 +385,10 @@ def decode_status_message(
     if command is CommandType.LEVEL_TOGGLE:
         if len(data) < 3:
             return UnknownStatusMessage(room, channel, **common)
-        return LevelToggleMessage(
-            room, channel, level=data[1], is_on=bool(data[2]), **common
-        )
+        return LevelToggleMessage(room, channel, level=data[1], is_on=bool(data[2]), **common)
 
     if command is CommandType.FADE:
-        direction = (
-            FadeDirection.DOWN
-            if (flags or 0) & FLAG_FADE_DOWN
-            else FadeDirection.UP
-        )
+        direction = FadeDirection.DOWN if (flags or 0) & FLAG_FADE_DOWN else FadeDirection.UP
         return FadeMessage(
             room,
             channel,
@@ -410,9 +398,7 @@ def decode_status_message(
         )
 
     if command in (CommandType.FADE_UP, CommandType.FADE_DOWN):
-        direction = (
-            FadeDirection.UP if command is CommandType.FADE_UP else FadeDirection.DOWN
-        )
+        direction = FadeDirection.UP if command is CommandType.FADE_UP else FadeDirection.DOWN
         return FadeMessage(room, channel, direction=direction, **common)
 
     if command is CommandType.STOP_FADING:
@@ -425,9 +411,7 @@ def decode_status_message(
         return IdentMessage(room, channel, **common)
 
     if command is CommandType.CUSTOM_232:
-        return Custom232Message(
-            room, channel, string_id=data[1] if len(data) > 1 else 0, **common
-        )
+        return Custom232Message(room, channel, string_id=data[1] if len(data) > 1 else 0, **common)
 
     if command is CommandType.HOLIDAY:
         return HolidayMessage(room, channel, mode=(flags or 0) & 0x03, **common)

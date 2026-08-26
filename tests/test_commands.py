@@ -107,9 +107,7 @@ class FakeBridge:
         if should_echo and self.broadcast_to is not None:
             await asyncio.sleep(self.echo_delay)
             frames = (
-                self.echo_builder(request)
-                if self.echo_builder
-                else [status_frame_for(request)]
+                self.echo_builder(request) if self.echo_builder else [status_frame_for(request)]
             )
             assert self._sock is not None
             for frame in frames:
@@ -207,19 +205,13 @@ async def test_the_ack_is_still_collected_for_diagnostics(bridge, fake_bridge):
 # ---------------------------------------------------------------------------
 
 
-async def test_a_scene_set_echoed_as_a_legacy_sc_command_still_verifies(
-    bridge, fake_bridge
-):
+async def test_a_scene_set_echoed_as_a_legacy_sc_command_still_verifies(bridge, fake_bridge):
     """The app and some keypads echo scene selections as SC1-SC4, not SET_SCENE."""
 
     def legacy_echo(request):
         scene = request[7]
         legacy = {1: 3, 2: 4, 3: 5, 4: 6}[scene]
-        return [
-            encode_command(
-                request[3], request[4], legacy, message_type=MessageType.STATUS
-            )
-        ]
+        return [encode_command(request[3], request[4], legacy, message_type=MessageType.STATUS)]
 
     fake_bridge.echo_builder = legacy_echo
     message = await bridge.set_room_scene(6, 2)
@@ -254,9 +246,7 @@ async def test_silence_retries_once_then_raises(bridge, fake_bridge):
     assert len(fake_bridge.requests) == 2
 
 
-async def test_a_command_lost_on_the_first_attempt_succeeds_on_the_retry(
-    bridge, fake_bridge
-):
+async def test_a_command_lost_on_the_first_attempt_succeeds_on_the_retry(bridge, fake_bridge):
     """The observed failure mode: the command never reaches the circuit."""
     fake_bridge.silent_for = 1
     message = await bridge.set_channel_level(7, 2, 255)
@@ -283,9 +273,7 @@ async def test_verify_false_sends_and_returns_none(bridge, fake_bridge):
     assert len(fake_bridge.requests) == 1
 
 
-async def test_without_a_listener_the_command_is_sent_unverified(
-    fake_bridge, caplog
-):
+async def test_without_a_listener_the_command_is_sent_unverified(fake_bridge, caplog):
     """Legacy behaviour, minus the lie: silence is reported, not called success."""
     fake_bridge.silent = True
     bridge = Bridge(LOOPBACK, fake_bridge.port, "fake", "00:00:00:00:00:00")
@@ -299,9 +287,7 @@ async def test_without_a_listener_the_command_is_sent_unverified(
         await bridge.close()
 
 
-async def test_detaching_the_listener_returns_to_the_unverified_path(
-    bridge, fake_bridge
-):
+async def test_detaching_the_listener_returns_to_the_unverified_path(bridge, fake_bridge):
     fake_bridge.silent = True
     bridge.detach_listener()
     assert await bridge.set_channel_level(7, 2, 255) is None
@@ -320,9 +306,7 @@ async def test_a_command_the_bridge_never_echoes_is_not_waited_for(bridge, fake_
 # ---------------------------------------------------------------------------
 
 
-async def test_commands_to_different_targets_verify_independently(
-    bridge, fake_bridge
-):
+async def test_commands_to_different_targets_verify_independently(bridge, fake_bridge):
     fake_bridge.echo_delay = 0.05
     results = await asyncio.gather(
         bridge.set_channel_level(7, 2, 255),
@@ -405,9 +389,7 @@ async def test_waiters_are_removed_when_the_block_exits():
 
 def test_as_status_frame_round_trips():
     spec = level_command(7, 2, 129)
-    assert decode_status_message(as_status_frame(spec)) == ChannelStatusMessage(
-        7, 2, 129
-    )
+    assert decode_status_message(as_status_frame(spec)) == ChannelStatusMessage(7, 2, 129)
 
 
 def test_level_command_rejects_a_bad_level():
@@ -428,9 +410,7 @@ class _RecordingHttpCommander(BridgeCommanderHTTP):
     async def set_room_scene(self, room_id: int, scene: int) -> None:
         self.scenes.append((room_id, scene))
 
-    async def set_channel_brightness(
-        self, room_id: int, channel_id: int, brightness: int
-    ) -> None:
+    async def set_channel_brightness(self, room_id: int, channel_id: int, brightness: int) -> None:
         self.levels.append((room_id, channel_id, brightness))
 
 

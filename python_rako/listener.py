@@ -256,9 +256,7 @@ class StatusListener:
         and skipped: it can never take down the loop or the other subscribers.
         Returns a handle that unsubscribes when called.
         """
-        subscription = _Subscription(
-            callback, is_async=asyncio.iscoroutinefunction(callback)
-        )
+        subscription = _Subscription(callback, is_async=asyncio.iscoroutinefunction(callback))
         self._subscriptions.append(subscription)
 
         def unsubscribe() -> None:

@@ -1,11 +1,9 @@
 from __future__ import annotations
 
-import asyncio
 import logging
 import socket
-import time
 from contextlib import asynccontextmanager
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import asyncio_dgram
 
@@ -29,6 +27,7 @@ from python_rako.model import (
     StatusMessage,
     UnsupportedMessage,
 )
+
 # ``calc_crc`` is re-exported for backwards compatibility; it now lives in
 # ``protocol`` alongside the rest of the framing logic.
 from python_rako.protocol import (  # noqa: F401
@@ -49,8 +48,11 @@ async def get_dg_listener(port: int, listen_host: str = "0.0.0.0") -> AsyncItera
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_BROADCAST, 1)
         sock.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         sock.bind((listen_host, port))
-        
-        server = await asyncio_dgram.from_socket(sock)
+
+        # asyncio-dgram lacks type hints; from_socket() is typed as
+        # DatagramServer | DatagramClient, but a bound (unconnected) socket
+        # always yields a DatagramServer.
+        server = cast("DatagramServer", await asyncio_dgram.from_socket(sock))
         yield server
     finally:
         if server:
@@ -121,15 +123,23 @@ def deserialise_level_cache_message(byte_list: list[int]) -> LevelCache:
 
 
 def deserialise_scene_cache_message(byte_list: list[int]) -> SceneCache:
+    """Deserialise a scene-cache message.
+
+    Each room's entry is a 2-byte record ``hi, lo`` encoding
+    ``scene << 10 | room`` (room is 10 bits: 2 bits carried in the low
+    bits of ``hi``, 8 bits in ``lo``), so rooms above 255 are representable.
+    """
     scene_cache = SceneCache()
     it = iter(byte_list)
     next(it)  # message type
     next(it)  # undocumented. following bytes?
-    for b in it:
-        room = next(it, sentinel)
-        if room == sentinel:
+    for hi in it:
+        lo = next(it, sentinel)
+        if lo == sentinel:
             continue
-        scene_cache[room] = int(b / 4)  # type: ignore # pylint: disable=E1137
+        room = ((hi & 0x03) << 8) | lo  # type: ignore[operator]
+        scene = hi >> 2
+        scene_cache[room] = scene
     return scene_cache
 
 
@@ -181,38 +191,3 @@ def convert_to_scene(brightness: int) -> int:
 
     scene = next(k for k, v in _scene_windows.items() if v["low"] <= brightness < v["high"])
     return scene
-
-
-def get_predicted_channel_brightness(level_cache: LevelCache, room: int, channel: int, scene: int) -> int:
-    """Predict channel brightness from scene using cache, fallback to conversion."""
-    # Try cache first
-    cached_brightness = level_cache.get_channel_level(
-        RoomChannel(room, channel), scene
-    )
-    if cached_brightness > 0:
-        return cached_brightness
-    
-    # Fallback to scene-to-brightness conversion
-    return convert_to_brightness(scene)
-
-
-class UDPMessageRateLimit:
-    """Rate limiter for UDP message processing to prevent flooding."""
-    
-    def __init__(self, max_messages_per_second: int = 50):
-        self.max_messages = max_messages_per_second
-        self.message_times: list[float] = []
-        self.lock = asyncio.Lock()
-    
-    async def should_process_message(self) -> bool:
-        """Rate limit UDP message processing."""
-        async with self.lock:
-            now = time.time()
-            # Remove messages older than 1 second
-            self.message_times = [t for t in self.message_times if now - t < 1.0]
-            
-            if len(self.message_times) >= self.max_messages:
-                return False
-            
-            self.message_times.append(now)
-            return True

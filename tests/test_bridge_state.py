@@ -40,9 +40,7 @@ async def test_get_scene_cache_http(aresponses):
 
 
 async def test_get_scene_cache_http_raises_on_a_bad_response(aresponses):
-    aresponses.add(
-        BRIDGE_HOST, "/scenes.htm", "GET", aresponses.Response(text="", status=500)
-    )
+    aresponses.add(BRIDGE_HOST, "/scenes.htm", "GET", aresponses.Response(text="", status=500))
     bridge = make_bridge()
     async with aiohttp.ClientSession() as session:
         with pytest.raises(RakoBridgeError, match="scene cache"):
@@ -71,9 +69,7 @@ async def test_get_state_snapshot_over_http(aresponses):
 
 
 async def test_get_state_snapshot_falls_back_to_the_udp_query(aresponses, monkeypatch):
-    aresponses.add(
-        BRIDGE_HOST, "/scenes.htm", "GET", aresponses.Response(text="", status=404)
-    )
+    aresponses.add(BRIDGE_HOST, "/scenes.htm", "GET", aresponses.Response(text="", status=404))
     bridge = make_bridge()
 
     async def fake_cache_state(cache_type=None):
@@ -106,9 +102,7 @@ async def test_get_state_snapshot_without_a_session_uses_udp(monkeypatch):
 
 async def test_get_state_snapshot_refreshes_the_level_table_on_demand(monkeypatch):
     bridge = make_bridge()
-    refreshed = LevelCache(
-        {RoomChannel(6, 1): LevelCacheItem(0x80, 6, 1, {1: 10, 2: 20})}
-    )
+    refreshed = LevelCache({RoomChannel(6, 1): LevelCacheItem(0x80, 6, 1, {1: 10, 2: 20})})
     seen: list = []
 
     async def fake_cache_state(cache_type=None):

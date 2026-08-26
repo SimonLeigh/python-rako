@@ -84,16 +84,12 @@ def test_replay_ha_experiment_room_7():
     """The off and on echoes observed for an HA-originated command."""
     snapshot = empty_snapshot()
 
-    snapshot = snapshot.apply(
-        ChannelStatusMessage(7, 2, 0), source=StateSource.COMMAND_ECHO
-    )
+    snapshot = snapshot.apply(ChannelStatusMessage(7, 2, 0), source=StateSource.COMMAND_ECHO)
     assert snapshot.channel_level(7, 2) == 0
     assert snapshot.channel_state(7, 2).source is StateSource.COMMAND_ECHO
     assert snapshot.channel_state(7, 2).is_estimated is False
 
-    snapshot = snapshot.apply(
-        ChannelStatusMessage(7, 2, 255), source=StateSource.COMMAND_ECHO
-    )
+    snapshot = snapshot.apply(ChannelStatusMessage(7, 2, 255), source=StateSource.COMMAND_ECHO)
     assert snapshot.channel_level(7, 2) == 255
 
 
@@ -120,12 +116,8 @@ def test_replay_keypad_experiment():
     assert snapshot.room_scene(9) == 0
     assert snapshot.channel_level(9, 1) == 0
 
-    on = LevelToggleMessage(
-        158, 0, level=255, is_on=True, command=CommandType.LEVEL_TOGGLE
-    )
-    off = LevelToggleMessage(
-        158, 0, level=255, is_on=False, command=CommandType.LEVEL_TOGGLE
-    )
+    on = LevelToggleMessage(158, 0, level=255, is_on=True, command=CommandType.LEVEL_TOGGLE)
+    off = LevelToggleMessage(158, 0, level=255, is_on=False, command=CommandType.LEVEL_TOGGLE)
     snapshot = snapshot.apply(on)
     assert snapshot.channel_level(158, 0) == 255
     assert snapshot.channel_state(158, 0).source is StateSource.LEVEL_BROADCAST
@@ -269,9 +261,7 @@ def test_from_caches_with_an_empty_cache():
 def test_reconcile_keeps_a_true_level_when_the_cached_scene_agrees():
     """The Phase-0 worked example: scene 2 tracked, slider set 129, cache says 2."""
     tracked = (
-        empty_snapshot()
-        .apply(SceneStatusMessage(6, 0, 2))
-        .apply(ChannelStatusMessage(6, 1, 129))
+        empty_snapshot().apply(SceneStatusMessage(6, 0, 2)).apply(ChannelStatusMessage(6, 1, 129))
     )
     fresh = BridgeStateSnapshot.from_caches(SceneCache({6: 2}), LEVEL_TABLE)
 
@@ -284,9 +274,7 @@ def test_reconcile_keeps_a_true_level_when_the_cached_scene_agrees():
 
 def test_reconcile_adopts_the_cache_when_the_scene_differs():
     tracked = (
-        empty_snapshot()
-        .apply(SceneStatusMessage(6, 0, 2))
-        .apply(ChannelStatusMessage(6, 1, 129))
+        empty_snapshot().apply(SceneStatusMessage(6, 0, 2)).apply(ChannelStatusMessage(6, 1, 129))
     )
     fresh = BridgeStateSnapshot.from_caches(SceneCache({6: 1}), LEVEL_TABLE)
 
@@ -298,8 +286,10 @@ def test_reconcile_adopts_the_cache_when_the_scene_differs():
 
 
 def test_reconcile_does_not_overwrite_a_command_echo():
-    tracked = empty_snapshot().apply(SceneStatusMessage(7, 0, 2)).apply(
-        ChannelStatusMessage(7, 2, 255), source=StateSource.COMMAND_ECHO
+    tracked = (
+        empty_snapshot()
+        .apply(SceneStatusMessage(7, 0, 2))
+        .apply(ChannelStatusMessage(7, 2, 255), source=StateSource.COMMAND_ECHO)
     )
     fresh = BridgeStateSnapshot.from_caches(SceneCache({7: 2}), LEVEL_TABLE)
 

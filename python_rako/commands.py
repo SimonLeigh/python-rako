@@ -335,6 +335,10 @@ class EchoVerifier:
 class CommandSender:
     """Transport that puts a :class:`CommandSpec` on the wire."""
 
+    #: Set once the "sending unverified" warning has been issued, so a
+    #: misconfiguration is reported without one warning per light command.
+    warned_unverified: bool = False
+
     async def send(self, spec: CommandSpec) -> None:
         raise NotImplementedError
 
@@ -433,7 +437,9 @@ async def execute_command(
     """
     if not verify or verifier is None:
         if verify and verifier is None:
-            _LOGGER.warning(
+            log = _LOGGER.debug if sender.warned_unverified else _LOGGER.warning
+            sender.warned_unverified = True
+            log(
                 "Sending %s without echo verification: no status listener is "
                 "attached, so a command that silently fails will not be noticed",
                 spec,

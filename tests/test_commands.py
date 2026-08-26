@@ -458,3 +458,16 @@ async def test_execute_command_without_a_verifier_warns_once(fake_bridge, caplog
         assert "without echo verification" in caplog.text
     finally:
         await sender.close()
+
+
+async def test_the_unverified_warning_is_not_repeated_per_command(fake_bridge, caplog):
+    """A misconfiguration should be reported, not logged once per light."""
+    sender = UdpCommandSender(LOOPBACK, fake_bridge.port)
+    try:
+        await execute_command(sender, level_command(7, 2, 1))
+        await execute_command(sender, level_command(7, 2, 2))
+        await execute_command(sender, level_command(7, 2, 3))
+    finally:
+        await sender.close()
+    warnings = [r for r in caplog.records if r.levelname == "WARNING"]
+    assert len(warnings) == 1

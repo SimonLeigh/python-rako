@@ -122,6 +122,9 @@ addopts = [
     "--cov-report=term-missing",
     "--cov-fail-under=80",
 ]
+markers = [
+    "live: requires a real Rako bridge on the LAN and RAKO_LIVE=1 (see tests/README_TESTING.md); never collected by a plain `pytest` run since testpaths excludes tests_integration",
+]
 
 # Coverage configuration
 [tool.coverage.run]

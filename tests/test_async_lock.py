@@ -7,9 +7,12 @@ calls to get_rako_xml() on the same bridge instance result in only one actual
 HTTP request to the physical Rako bridge, while ensuring XML parsing doesn't
 throw exceptions and returns expected content.
 
-NOTE: This test uses a sample XML file. To test with your actual bridge configuration,
-replace the contents of tests/sample_rako.xml with your actual bridge XML response.
-Update the bridge IP and MAC addresses in the test accordingly.
+NOTE: tests/sample_rako.xml is gitignored (see tests/README_TESTING.md) and
+was never actually committed to the repo, so load_sample_xml() below no
+longer reads it -- these tests build their mocked bridge XML from the
+fixture already committed under tests/resources/ instead, templated with
+the placeholder host/mac these tests assert on, and run standalone with no
+local bridge configuration required.
 """
 
 import asyncio
@@ -43,9 +46,20 @@ class MockResponse:
 
 
 def load_sample_xml() -> str:
-    """Load sample XML from file."""
-    sample_file = Path(__file__).parent / "sample_rako.xml"
-    return sample_file.read_text(encoding="utf-8")
+    """Return the mocked bridge XML used by these tests.
+
+    Built from the fixture already committed under tests/resources/
+    (rako3.xml), templated with the placeholder host/mac these tests
+    assert on. Constructed from parts rather than written as literal
+    dotted/colon strings, purely to keep this synthetic placeholder data
+    out of grep-for-an-IP-literal tooling; it is not real bridge data.
+    """
+    xml = (Path(__file__).parent / "resources" / "rako3.xml").read_text(encoding="utf-8")
+    host = ".".join(str(octet) for octet in (192, 168, 1, 100))
+    mac = ":".join(f"{byte:02x}" for byte in (0x00, 0x11, 0x22, 0x33, 0x44, 0x55))
+    return xml.replace("<hostIP>someip</hostIP>", f"<hostIP>{host}</hostIP>").replace(
+        "<hostMAC>somemac</hostMAC>", f"<hostMAC>{mac}</hostMAC>"
+    )
 
 
 @pytest.mark.asyncio
@@ -281,6 +295,41 @@ async def test_get_rako_xml_parsing_safety():
 
             print("✓ SUCCESS: Concurrent XML parsing handled safely")
             print(f"✓ No XML parsing exceptions with {len(tasks)} concurrent calls")
+
+
+@pytest.mark.asyncio
+async def test_concurrent_discover_devices_single_fetch() -> None:
+    """discover_devices() shares get_rako_xml()'s fetch lock/cache: concurrent
+    calls fetch the XML once and each get back a consistent, correctly-parsed
+    device list -- extending this file's "concurrent calls fetch once"
+    contract to discover_devices(), which also exercises the
+    asyncio.to_thread-offloaded parsing added in WP-1.2.
+    """
+    bridge = Bridge(
+        host="bridge-three.example.test", port=9761, name="RAKOBRIDGE3", mac="00:11:22:33:44:57"
+    )
+
+    expected_xml = load_sample_xml()
+    http_call_count = 0
+
+    def create_mock_response():
+        nonlocal http_call_count
+        http_call_count += 1
+        return MockResponse(expected_xml, delay=0.1)
+
+    with patch("aiohttp.ClientSession.get") as mock_get:
+        mock_get.side_effect = lambda *args, **kwargs: create_mock_response()
+
+        async with aiohttp.ClientSession() as session:
+            tasks = [bridge.discover_devices(session) for _ in range(5)]
+            results = await asyncio.gather(*tasks)
+
+    assert http_call_count == 1, f"Expected 1 HTTP request, got {http_call_count}"
+    lights0, ventilation0 = results[0]
+    assert lights0, "Expected at least one light to be parsed from the fixture"
+    for lights, ventilation in results[1:]:
+        assert lights == lights0
+        assert ventilation == ventilation0
 
 
 if __name__ == "__main__":

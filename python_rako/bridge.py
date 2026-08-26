@@ -2,7 +2,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-import threading
 import time
 from typing import TYPE_CHECKING, Any, cast
 
@@ -16,7 +15,7 @@ from python_rako.const import (
     MessageType,
     RequestType,
 )
-from python_rako.exceptions import RakoBridgeError, RakoConnectionError, RakoCommandError
+from python_rako.exceptions import RakoBridgeError, RakoConnectionError
 from python_rako.helpers import (
     command_to_byte_list,
     deserialise_byte_list,
@@ -43,9 +42,6 @@ if TYPE_CHECKING:
     from asyncio_dgram.aio import DatagramServer
 
 _LOGGER = logging.getLogger(__name__)
-
-# Thread lock for XML parsing to ensure concurrency safety
-_XML_PARSE_LOCK = threading.Lock()
 
 
 class _BridgeCommander:
@@ -95,7 +91,7 @@ class BridgeCommanderUDP(_BridgeCommander):
         """Send command with retry logic."""
         _LOGGER.debug("Sending command: %s", command)
         byte_list = command_to_byte_list(command)
-        
+
         for attempt in range(max_retries + 1):
             try:
                 async with get_dg_commander(self.host, self.port) as dg_client:
@@ -109,14 +105,18 @@ class BridgeCommanderUDP(_BridgeCommander):
                         return True
                     except TimeoutError:
                         # Many bridges don't send consistent responses, just log and continue
-                        _LOGGER.debug("No response received for command %s (timeout after 3s)", command)
+                        _LOGGER.debug(
+                            "No response received for command %s (timeout after 3s)", command
+                        )
                         return True  # Consider timeout as success for UDP commands
             except (ConnectionError, OSError) as e:
                 if attempt == max_retries:
                     _LOGGER.error("Command failed after %d attempts: %s", max_retries + 1, e)
-                    raise RakoConnectionError(f"Failed to send command after {max_retries + 1} attempts: {e}") from e
+                    raise RakoConnectionError(
+                        f"Failed to send command after {max_retries + 1} attempts: {e}"
+                    ) from e
                 _LOGGER.warning("Command attempt %d failed, retrying: %s", attempt + 1, e)
-                await asyncio.sleep(0.5 * (2 ** attempt))  # Exponential backoff
+                await asyncio.sleep(0.5 * (2**attempt))  # Exponential backoff
         return False
 
 
@@ -186,7 +186,8 @@ class Bridge:
             if self._cached_xml is None or force_refresh:
                 async with session.get(self._discovery_url) as response:
                     self._cached_xml = await response.text()
-        assert self._cached_xml is not None
+        if self._cached_xml is None:
+            raise RakoBridgeError("Failed to fetch bridge discovery XML")
         return self._cached_xml
 
     async def discover_devices(
@@ -198,10 +199,16 @@ class Bridge:
         """
         rako_xml = await self.get_rako_xml(session, force_refresh)
 
+        # Parsing (xmltodict) is a blocking, potentially slow operation for a
+        # large rako.xml, so run it off the event loop.
+        devices = await asyncio.to_thread(
+            lambda: list(self.get_devices_from_discovery_xml(rako_xml))
+        )
+
         lights: list[RoomLight | ChannelLight] = []
         ventilation: list[RoomVentilation | ChannelVentilation] = []
 
-        for device in self.get_devices_from_discovery_xml(rako_xml):
+        for device in devices:
             if isinstance(device, RoomLight | ChannelLight):
                 lights.append(device)
             elif isinstance(device, RoomVentilation | ChannelVentilation):
@@ -230,7 +237,8 @@ class Bridge:
     ) -> BridgeInfo:
         try:
             rako_xml = await self.get_rako_xml(session, force_refresh)
-            info = self.get_bridge_info_from_discovery_xml(rako_xml)
+            # Parsing (xmltodict) is a blocking operation, so run it off the event loop.
+            info = await asyncio.to_thread(self.get_bridge_info_from_discovery_xml, rako_xml)
         except (KeyError, ValueError) as ex:
             raise RakoBridgeError(f"unsupported bridge: {ex}") from ex
         except aiohttp.ClientError as ex:
@@ -239,8 +247,7 @@ class Bridge:
 
     @staticmethod
     def get_bridge_info_from_discovery_xml(xml: str) -> BridgeInfo:
-        with _XML_PARSE_LOCK:
-            xml_dict = xmltodict.parse(xml)
+        xml_dict = xmltodict.parse(xml)
         info = xml_dict["rako"].get("info", {})
         config = xml_dict["rako"].get("config", {})
         return BridgeInfo(
@@ -268,8 +275,7 @@ class Bridge:
         else:
             target_types = set(device_types)
 
-        with _XML_PARSE_LOCK:
-            xml_dict = xmltodict.parse(xml, force_list={"Room"})
+        xml_dict = xmltodict.parse(xml, force_list={"Room"})
         for room in xml_dict["rako"]["rooms"]["Room"]:
             room_id = int(room["@id"])
             room_type = room.get("Type", "Lights")
@@ -365,8 +371,8 @@ class Bridge:
             try:
                 self.level_cache, self.scene_cache = await self.get_cache_state()
                 self._last_cache_refresh = current_time
-                _LOGGER.debug("📚 Cache refreshed for bridge %s", self.mac)
-            except Exception as e:
+                _LOGGER.debug("Cache refreshed for bridge %s", self.mac)
+            except OSError as e:
                 _LOGGER.warning("Failed to refresh cache for bridge %s: %s", self.mac, e)
 
     async def set_room_scene(self, room_id: int, scene: int) -> None:

@@ -94,6 +94,7 @@ ignore = [
 "tests/*" = ["S105", "S106", "PLR2004", "F841", "B007"]  # Allow test patterns and unused vars
 "tests_integration/*" = ["S105", "S106", "PLR2004", "F841", "B007"]  # Allow test patterns
 "examples/*" = ["T20", "PLR2004", "F841"]         # Allow prints, magic values, and unused vars
+"scripts/*" = ["T20", "PLR2004"]                  # CLI tools: allow prints and magic values
 
 [tool.ruff.lint.isort]
 known-first-party = ["python_rako"]

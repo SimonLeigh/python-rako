@@ -10,11 +10,13 @@ truth for the decoder.
 import pytest
 
 from python_rako.const import (
+    MAX_ROOM_ID,
     CommandType,
     FadeDirection,
     MessageOrigin,
     MessageType,
 )
+from python_rako.exceptions import RakoBridgeError, RakoProtocolError
 from python_rako.model import ChannelStatusMessage, SceneStatusMessage
 from python_rako.protocol import (
     AckPacket,
@@ -490,3 +492,37 @@ def test_scenes_htm_supports_ten_bit_rooms():
 @pytest.mark.parametrize("text", ["", "FFFF", "0000", "AB"])
 def test_scenes_htm_empty_and_filler_values(text):
     assert decode_scene_cache_hex(text) == {}
+
+
+# ---------------------------------------------------------------------------
+# Encoding errors
+# ---------------------------------------------------------------------------
+
+
+def test_out_of_range_input_raises_a_rako_error_that_is_still_a_value_error():
+    """Rooms are 10-bit; older versions silently sent unroutable 16-bit frames."""
+    with pytest.raises(RakoProtocolError, match="10-bit"):
+        encode_command(1024, 0, CommandType.OFF)
+    assert issubclass(RakoProtocolError, RakoBridgeError)
+    assert issubclass(RakoProtocolError, ValueError)
+
+
+@pytest.mark.parametrize(
+    "call",
+    [
+        lambda: encode_command(1, 256, CommandType.OFF),
+        lambda: encode_command(1, 0, CommandType.OFF, [0] * 8),
+        lambda: encode_command(1, 0, CommandType.OFF, [300]),
+        lambda: encode_set_level(1, 0, 256),
+        lambda: encode_level_set_legacy(1, 0, -1),
+        lambda: encode_holiday(1, 9),
+    ],
+)
+def test_every_encoder_range_check_raises_the_same_type(call):
+    with pytest.raises(RakoProtocolError):
+        call()
+
+
+def test_the_highest_addressable_room_still_encodes():
+    assert MAX_ROOM_ID == 1023
+    assert validate_crc(encode_command(MAX_ROOM_ID, 0, CommandType.OFF))

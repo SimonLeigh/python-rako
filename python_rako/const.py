@@ -8,6 +8,10 @@ sentinel = object()
 #: (room high, room low, channel, command, checksum).
 STATUS_HEADER_LENGTH = 5
 
+#: Highest addressable room. Room numbers are 10 bits spread across two bytes,
+#: so only the low two bits of the high byte belong to the room number.
+MAX_ROOM_ID = 0x3FF
+
 
 class MessageType(Enum):
     QUERY = ord("Q")  # 81

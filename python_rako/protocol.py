@@ -42,6 +42,7 @@ from python_rako.const import (
     FLAG_FADE_DOWN,
     FLAG_SENSOR_ORIGIN,
     FLAG_USE_DEFAULT_FADE_RATE,
+    MAX_ROOM_ID,
     SCENE_COMMAND_TO_NUMBER,
     STATUS_HEADER_LENGTH,
     CommandType,
@@ -49,6 +50,7 @@ from python_rako.const import (
     MessageOrigin,
     MessageType,
 )
+from python_rako.exceptions import RakoProtocolError
 from python_rako.model import (
     ChannelStatusMessage,
     SceneCache,
@@ -521,19 +523,25 @@ def encode_command(
 ) -> list[int]:
     """Build the byte list for a Rako command request.
 
-    ``room`` is 10-bit; it is split across the two room bytes.  The checksum
-    covers the bytes-to-follow byte for requests and omits it for status
-    frames, matching :func:`validate_crc`.
+    Room numbers are **10-bit** (0-1023): the protocol splits a room across two
+    bytes but only the low two bits of the high byte are part of the room
+    number, so 1023 is the highest addressable room.  Earlier versions of this
+    library sent the full 16 bits, which silently produced frames the bridge
+    could not route.  The checksum covers the bytes-to-follow byte for requests
+    and omits it for status frames, matching :func:`validate_crc`.
+
+    :raises RakoProtocolError: any field is out of range.  It subclasses
+        ``ValueError``, so existing ``except ValueError`` handlers still catch it.
     """
-    if not 0 <= room <= 0x3FF:
-        raise ValueError(f"room must be a 10-bit value, got {room}")
+    if not 0 <= room <= MAX_ROOM_ID:
+        raise RakoProtocolError(f"room must be a 10-bit value (0-{MAX_ROOM_ID}), got {room}")
     if not 0 <= channel <= 0xFF:
-        raise ValueError(f"channel must be a byte, got {channel}")
+        raise RakoProtocolError(f"channel must be a byte (0-255), got {channel}")
     data = list(data)
     if len(data) > 7:
-        raise ValueError(f"at most 7 data bytes are allowed, got {len(data)}")
+        raise RakoProtocolError(f"at most 7 data bytes are allowed, got {len(data)}")
     if any(not 0 <= b <= 0xFF for b in data):
-        raise ValueError(f"data bytes must be 0-255, got {data}")
+        raise RakoProtocolError(f"data bytes must be 0-255, got {data}")
 
     command_value = command.value if isinstance(command, CommandType) else command
 
@@ -567,7 +575,7 @@ def encode_set_level(
 ) -> list[int]:
     """Drive a channel to an absolute level (SET_LEVEL 0x34)."""
     if not 0 <= level <= 255:
-        raise ValueError(f"level must be 0-255, got {level}")
+        raise RakoProtocolError(f"level must be 0-255, got {level}")
     flags = FLAG_USE_DEFAULT_FADE_RATE if use_default_rate else 0
     return encode_command(room, channel, CommandType.SET_LEVEL, [flags, level])
 
@@ -578,7 +586,7 @@ def encode_level_set_legacy(room: int, channel: int, level: int) -> list[int]:
     Both data bytes must carry the level.
     """
     if not 0 <= level <= 255:
-        raise ValueError(f"level must be 0-255, got {level}")
+        raise RakoProtocolError(f"level must be 0-255, got {level}")
     return encode_command(room, channel, CommandType.LEVEL_SET_LEGACY, [level, level])
 
 
@@ -590,10 +598,15 @@ def encode_fade(
     use_default_rate: bool = True,
     level: int = 0,
 ) -> list[int]:
-    """Start a fade in ``direction`` (FADE 0x32).
+    """Fade towards ``level`` in ``direction`` (FADE 0x32).
 
-    Must be terminated with :func:`encode_stop_fade`, exactly as a keypad does
-    on button release.
+    This is the *parameterised* fade: it carries a flags byte and a target
+    level.  It is **not** what a keypad's up/down button sends, and it is not
+    what :meth:`python_rako.Bridge.fade_up` uses -- those use the press/release
+    pair :func:`encode_fade_up` / :func:`encode_fade_down` plus
+    :func:`encode_stop_fade`, which is the form the protocol document's worked
+    example uses and the form keypads broadcast.  Reach for this one only when
+    you specifically want the 0x32 instruction.
     """
     flags = FLAG_FADE_DOWN if direction is FadeDirection.DOWN else 0
     if use_default_rate:
@@ -602,12 +615,19 @@ def encode_fade(
 
 
 def encode_fade_up(room: int, channel: int = 0) -> list[int]:
-    """Start fading up using the legacy FADE_UP instruction (0x01)."""
+    """Start fading up (FADE_UP 0x01) -- the keypad press/release form.
+
+    Must be terminated with :func:`encode_stop_fade`, exactly as a keypad does
+    when the button is released.
+    """
     return encode_command(room, channel, CommandType.FADE_UP)
 
 
 def encode_fade_down(room: int, channel: int = 0) -> list[int]:
-    """Start fading down using the legacy FADE_DOWN instruction (0x02)."""
+    """Start fading down (FADE_DOWN 0x02) -- the keypad press/release form.
+
+    Must be terminated with :func:`encode_stop_fade`.
+    """
     return encode_command(room, channel, CommandType.FADE_DOWN)
 
 
@@ -634,5 +654,5 @@ def encode_custom_232(room: int, string_id: int, channel: int = 0) -> list[int]:
 def encode_holiday(room: int, mode: int, channel: int = 0) -> list[int]:
     """Control holiday mode (HOLIDAY 0x2F); ``mode`` is 0-3, see :class:`HolidayMessage`."""
     if not 0 <= mode <= 3:
-        raise ValueError(f"holiday mode must be 0-3, got {mode}")
+        raise RakoProtocolError(f"holiday mode must be 0-3, got {mode}")
     return encode_command(room, channel, CommandType.HOLIDAY, [mode])

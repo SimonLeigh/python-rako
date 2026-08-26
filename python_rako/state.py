@@ -103,10 +103,21 @@ class RoomState:
     ``scene`` is ``None`` when the scene is genuinely unknown -- notably for
     rooms the bridge has dropped from its scene cache, which it does by design
     whenever a fade button is used.  ``None`` must never be treated as "off".
+
+    ``faded_from`` records the scene the room was in when a fade started.  It
+    is what lets :meth:`BridgeStateSnapshot.reconcile` tell a cache entry that
+    simply has not caught up with the fade from one describing a genuinely new
+    scene selection.
     """
 
     scene: int | None
     updated_at: float
+    faded_from: int | None = field(default=None, kw_only=True)
+
+    @property
+    def is_faded(self) -> bool:
+        """Whether the scene is unknown because a fade ran on this room."""
+        return self.scene is None and self.faded_from is not None
 
 
 @dataclass(frozen=True)
@@ -236,20 +247,21 @@ class BridgeStateSnapshot:
             for key in self._targets(message.room, message.channel):
                 channels[key] = state
 
-        elif isinstance(message, FadeMessage):
+        elif isinstance(message, FadeMessage | StopFadeMessage):
+            # A fade moves the circuit to a level nobody reports: the bridge
+            # broadcasts nothing when the fade stops. So both the press and the
+            # release leave the channels genuinely unknown.
             unknown = ChannelState(None, StateSource.UNKNOWN_AFTER_FADE, now)
             for key in self._targets(message.room, message.channel):
                 channels[key] = unknown
             # The bridge drops a faded room from its scene cache, so our idea of
-            # the room's scene is no longer meaningful either.
-            rooms[message.room] = RoomState(None, now)
-
-        elif isinstance(message, StopFadeMessage):
-            # No level is broadcast when a fade stops, so the channel stays
-            # unknown until something else reports it.
-            unknown = ChannelState(None, StateSource.UNKNOWN_AFTER_FADE, now)
-            for key in self._targets(message.room, message.channel):
-                channels[key] = unknown
+            # the room's scene is no longer meaningful either. Remember what it
+            # was, so reconcile() can recognise a cache that predates the fade.
+            previous = rooms.get(message.room)
+            faded_from = previous.faded_from if previous and previous.is_faded else None
+            if previous is not None and previous.scene is not None:
+                faded_from = previous.scene
+            rooms[message.room] = RoomState(None, now, faded_from=faded_from)
 
         elif isinstance(message, StoreMessage):
             # A keypad rewrote a scene definition; the level table is stale.
@@ -319,6 +331,15 @@ class BridgeStateSnapshot:
         Rooms absent from ``fresh`` are left exactly as they are: the bridge
         deletes fade-controlled rooms from its scene cache, so absence is not
         evidence of anything.
+
+        **Fades get one extra guard.**  A fade sets the room's scene to
+        ``None``, which would otherwise always "differ" from a cached scene and
+        so re-derive levels the fade just invalidated.  A cache that still
+        reports the scene the room was in *when the fade started* has not caught
+        up -- the bridge deletes faded rooms from that cache -- so it is
+        ignored, and the channels stay ``UNKNOWN_AFTER_FADE`` until something
+        actually reports a level.  A cache reporting a *different* scene is
+        describing a selection made after the fade, and is applied normally.
         """
         now = time.time() if now is None else now
         rooms = dict(self.rooms)
@@ -330,7 +351,23 @@ class BridgeStateSnapshot:
                 rc: state for rc, state in fresh.channels.items() if rc.room_id == room
             }
 
-            if tracked is not None and tracked.scene == fresh_room.scene:
+            if tracked is not None and tracked.is_faded:
+                if fresh_room.scene == tracked.faded_from:
+                    _LOGGER.debug(
+                        "Reconcile: ignoring stale scene %s for faded room %s",
+                        fresh_room.scene,
+                        room,
+                    )
+                    continue
+                _LOGGER.debug(
+                    "Reconcile: room %s faded from scene %s but the cache now "
+                    "says scene %s; adopting it",
+                    room,
+                    tracked.faded_from,
+                    fresh_room.scene,
+                )
+
+            elif tracked is not None and tracked.scene == fresh_room.scene:
                 # The cache agrees with us. Only fill in channels we have never
                 # heard anything about.
                 for room_channel, state in fresh_channels.items():
@@ -349,12 +386,18 @@ class BridgeStateSnapshot:
             for room_channel, state in fresh_channels.items():
                 channels[room_channel] = replace(state, updated_at=now)
 
+        # A STORE told us the scene definitions changed. Only an actually
+        # re-read level table clears that; reconciling against a snapshot built
+        # from the same table we already had proves nothing.
+        level_table = fresh.level_table or self.level_table
+        still_stale = self.level_table_stale and level_table is self.level_table
+
         return replace(
             self,
             rooms=rooms,
             channels=channels,
-            level_table=fresh.level_table or self.level_table,
-            level_table_stale=False,
+            level_table=level_table,
+            level_table_stale=still_stale,
             updated_at=now,
         )
 

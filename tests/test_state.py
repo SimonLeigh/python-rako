@@ -335,12 +335,101 @@ def test_reconcile_fills_in_channels_it_has_never_heard_of():
     assert reconciled.channel_level(6, 2) == 192
 
 
-def test_reconcile_clears_the_stale_flag_and_refreshes_the_table():
+def test_reconcile_clears_the_stale_flag_only_when_the_table_was_re_read():
+    """A STORE stays outstanding until the level table is actually refreshed."""
     tracked = empty_snapshot().apply(StoreMessage(6, 0, command=CommandType.STORE))
-    fresh = BridgeStateSnapshot.from_caches(SceneCache({6: 2}), LEVEL_TABLE)
-    reconciled = tracked.reconcile(fresh)
+
+    # Reconciling against a snapshot built from the *same* table proves nothing.
+    same_table = BridgeStateSnapshot.from_caches(SceneCache({6: 2}), LEVEL_TABLE)
+    assert tracked.reconcile(same_table).level_table_stale is True
+
+    # A genuinely re-read table clears it.
+    reread = LevelCache({RoomChannel(6, 1): LevelCacheItem(0x80, 6, 1, {1: 200, 2: 30})})
+    refreshed = BridgeStateSnapshot.from_caches(SceneCache({6: 2}), reread)
+    reconciled = tracked.reconcile(refreshed)
     assert reconciled.level_table_stale is False
-    assert reconciled.level_table is LEVEL_TABLE
+    assert reconciled.level_table is reread
+
+
+# ---------------------------------------------------------------------------
+# Fades and reconciliation
+# ---------------------------------------------------------------------------
+
+
+def test_reconcile_does_not_resurrect_the_scene_a_room_faded_out_of():
+    """A cache read can race a fade; it must not undo what the fade told us.
+
+    The bridge deletes fade-controlled rooms from its scene cache, so a cache
+    that still reports the pre-fade scene is simply behind. Re-deriving levels
+    from it would replace "we do not know" with a confident wrong answer.
+    """
+    tracked = (
+        empty_snapshot()
+        .apply(SceneStatusMessage(6, 0, 1))
+        .apply(FadeMessage(6, 0, direction=FadeDirection.UP, command=CommandType.FADE))
+    )
+    assert tracked.room_scene(6) is None
+    assert tracked.rooms[6].faded_from == 1
+
+    stale_cache = BridgeStateSnapshot.from_caches(SceneCache({6: 1}), LEVEL_TABLE)
+    reconciled = tracked.reconcile(stale_cache)
+
+    assert reconciled.room_scene(6) is None
+    assert reconciled.channel_level(6, 1) is None
+    assert reconciled.channel_state(6, 1).source is StateSource.UNKNOWN_AFTER_FADE
+
+
+def test_reconcile_adopts_a_scene_selected_after_the_fade():
+    """A *different* cached scene is a selection we missed, not a stale read."""
+    tracked = (
+        empty_snapshot()
+        .apply(SceneStatusMessage(6, 0, 1))
+        .apply(FadeMessage(6, 0, direction=FadeDirection.DOWN, command=CommandType.FADE))
+    )
+    fresh = BridgeStateSnapshot.from_caches(SceneCache({6: 2}), LEVEL_TABLE)
+
+    reconciled = tracked.reconcile(fresh)
+
+    assert reconciled.room_scene(6) == 2
+    assert reconciled.channel_level(6, 1) == 26
+    assert reconciled.channel_state(6, 1).source is StateSource.SCENE_DERIVED
+
+
+def test_a_stop_after_a_fade_keeps_the_pre_fade_scene_recorded():
+    tracked = (
+        empty_snapshot()
+        .apply(SceneStatusMessage(6, 0, 3))
+        .apply(FadeMessage(6, 0, direction=FadeDirection.UP, command=CommandType.FADE))
+        .apply(StopFadeMessage(6, 0, command=CommandType.STOP_FADING))
+    )
+    assert tracked.rooms[6].is_faded
+    assert tracked.rooms[6].faded_from == 3
+    stale_cache = BridgeStateSnapshot.from_caches(SceneCache({6: 3}), LEVEL_TABLE)
+    assert tracked.reconcile(stale_cache).channel_level(6, 1) is None
+
+
+def test_a_scene_selection_clears_the_faded_marker():
+    tracked = (
+        empty_snapshot()
+        .apply(SceneStatusMessage(6, 0, 1))
+        .apply(FadeMessage(6, 0, direction=FadeDirection.UP, command=CommandType.FADE))
+        .apply(SceneStatusMessage(6, 0, 1))
+    )
+    assert tracked.rooms[6].is_faded is False
+    assert tracked.rooms[6].faded_from is None
+    # ... so an agreeing cache is treated normally again.
+    fresh = BridgeStateSnapshot.from_caches(SceneCache({6: 1}), LEVEL_TABLE)
+    assert tracked.reconcile(fresh).room_scene(6) == 1
+
+
+def test_a_fade_on_a_room_we_never_had_a_scene_for_still_accepts_the_cache():
+    """With no pre-fade scene to compare against, the cache is new information."""
+    tracked = empty_snapshot().apply(
+        FadeMessage(6, 0, direction=FadeDirection.UP, command=CommandType.FADE)
+    )
+    assert tracked.rooms[6].faded_from is None
+    fresh = BridgeStateSnapshot.from_caches(SceneCache({6: 2}), LEVEL_TABLE)
+    assert tracked.reconcile(fresh).room_scene(6) == 2
 
 
 def test_room_channels_helper():

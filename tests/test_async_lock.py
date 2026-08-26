@@ -99,15 +99,15 @@ async def test_concurrent_get_rako_xml_calls():
 
             # CRITICAL TEST 1: Only one HTTP request should have been made
             assert http_call_count == 1, f"Expected 1 HTTP request, but {http_call_count} were made"
-            assert (
-                mock_get.call_count == 1
-            ), f"Expected 1 mock call, but {mock_get.call_count} were made"
+            assert mock_get.call_count == 1, (
+                f"Expected 1 mock call, but {mock_get.call_count} were made"
+            )
 
             # CRITICAL TEST 2: All results should be identical
             assert len(results) == num_concurrent_calls, f"Expected {num_concurrent_calls} results"
-            assert all(
-                result == results[0] for result in results
-            ), "All results should be identical"
+            assert all(result == results[0] for result in results), (
+                "All results should be identical"
+            )
 
             # CRITICAL TEST 3: Returned XML should match expected content
             for result in results:
@@ -185,9 +185,9 @@ async def test_concurrent_get_rako_xml_with_force_refresh():
             print(f"Force refresh made {http_call_count - 1} additional requests")
 
             # At least one result should be different from original cached result
-            assert any(
-                result != result1 for result in results
-            ), "At least one force refresh should return different result"
+            assert any(result != result1 for result in results), (
+                "At least one force refresh should return different result"
+            )
 
             print("✓ SUCCESS: Force refresh with concurrent calls handled correctly")
             print(f"✓ Total HTTP requests: {http_call_count} (expected 2)")

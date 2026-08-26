@@ -1,50 +1,117 @@
 ---
-name: PyPi Release
+name: Release
 
-# https://help.github.com/en/actions/reference/events-that-trigger-workflows
+# Two ways to run this workflow:
+#
+#  - "release: published"  -> real release. Builds, verifies the tag matches
+#    python_rako/__version__.py, and publishes to the real PyPI (environment: pypi).
+#
+#  - "workflow_dispatch"   -> dry run. Builds and publishes to TestPyPI
+#    (environment: testpypi) instead. Safe to run at any time; never touches
+#    the real PyPI. Use this to sanity-check the pipeline before cutting a
+#    real release.
+#
+# See RELEASING.md for the full maintainer walkthrough and the one-time
+# Trusted Publisher setup this workflow depends on.
+
 on:
   release:
-    types:
-      - created
+    types: [published]
+  workflow_dispatch: {}
 
-# based on https://github.com/pypa/gh-action-pypi-publish
+permissions: {}
+
 jobs:
   build:
+    name: Build & verify distribution
     runs-on: ubuntu-latest
-
+    permissions:
+      contents: read
     steps:
       - name: Checking out code from GitHub
         uses: actions/checkout@v4
-      - name: Set up Python 3.12
-        uses: actions/setup-python@v4
-        with:
-          python-version: 3.12
-      - name: generate version file
-        run: |
-          echo "$RELEASE_TAG" > python_rako/__version__.py
-          cat python_rako/__version__.py
-        env:
-          RELEASE_TAG: ${{ github.event.release.tag_name }}
-      - name: Install dependencies
-        run: |
-          python -m pip install --user --upgrade pip setuptools wheel build
-      - name: Build
-        run: >-
-          python -m build
 
-      # TEST
-      - name: Publish to Test PyPI
-        if: startsWith(github.event.ref, 'refs/tags') || github.event_name == 'release'
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+        with:
+          enable-cache: true
+
+      - name: Create virtual environment
+        run: uv venv .venv --python 3.13
+
+      - name: Verify the release tag matches python_rako/__version__.py
+        if: github.event_name == 'release'
+        run: |
+          .venv/bin/python scripts/bump_version.py check "${{ github.event.release.tag_name }}"
+
+      - name: Install build tooling
+        run: uv pip install --python .venv/bin/python build twine
+
+      - name: Build sdist and wheel
+        run: .venv/bin/python -m build
+
+      - name: Check distribution metadata (twine)
+        run: .venv/bin/python -m twine check dist/*
+
+      - name: Smoke-test the built wheel in a clean venv
+        run: |
+          uv venv /tmp/smoke-venv --python 3.13
+          uv pip install --python /tmp/smoke-venv/bin/python dist/*.whl
+          /tmp/smoke-venv/bin/python -c "import python_rako; print('python_rako', python_rako.__version__)"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+          if-no-files-found: error
+
+  publish-testpypi:
+    name: Publish to TestPyPI (dry run)
+    if: github.event_name == 'workflow_dispatch'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: testpypi
+      url: https://test.pypi.org/p/python-rako-2025
+    permissions:
+      id-token: write  # required for PyPI Trusted Publishing
+      attestations: write  # required for build provenance attestations
+      contents: read
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to TestPyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          user: __token__
-          password: ${{ secrets.TEST_PYPI_TOKEN }}
-          repository_url: https://test.pypi.org/legacy/
+          repository-url: https://test.pypi.org/legacy/
+          attestations: true
+          skip-existing: true  # dry runs of an unchanged version must not fail
 
-      # PROD
-      - name: Publish distribution 📦 to PyPI
-        if: startsWith(github.event.ref, 'refs/tags') || github.event_name == 'release'
+  publish-pypi:
+    name: Publish to PyPI
+    if: github.event_name == 'release'
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/p/python-rako-2025
+    permissions:
+      id-token: write  # required for PyPI Trusted Publishing
+      attestations: write  # required for build provenance attestations
+      contents: read
+    steps:
+      - name: Download build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+      - name: Publish to PyPI
         uses: pypa/gh-action-pypi-publish@release/v1
         with:
-          user: __token__
-          password: ${{ secrets.PYPI_TOKEN }}
+          attestations: true

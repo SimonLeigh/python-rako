@@ -8,6 +8,7 @@ from typing import TypedDict, cast
 
 import asyncio_dgram
 
+from python_rako.__version__ import __version__  # noqa
 from python_rako.bridge import Bridge, BridgeCommanderHTTP, BridgeCommanderUDP  # noqa
 from python_rako.commands import (  # noqa
     CommandSender,

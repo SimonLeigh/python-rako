@@ -90,6 +90,7 @@ jobs:
         with:
           repository-url: https://test.pypi.org/legacy/
           attestations: true
+          skip-existing: true  # dry runs of an unchanged version must not fail
 
   publish-pypi:
     name: Publish to PyPI

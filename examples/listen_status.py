@@ -61,7 +61,7 @@ async def main(host: str) -> None:
         print(f"Listening for broadcasts from {host}. Ctrl-C to stop.")
         while True:
             await asyncio.sleep(30)
-            health = listener.health()
+            health = listener.health
             print(
                 f"-- {health.messages_received} messages, "
                 f"{health.suppressed_duplicates} duplicates suppressed, "

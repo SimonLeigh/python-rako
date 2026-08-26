@@ -20,8 +20,12 @@ DEFAULT_PORT = 9761
 
 
 async def main(host: str, room: int, channel: int) -> None:
-    async with StatusListener(host) as listener:
-        bridge = Bridge(host, DEFAULT_PORT, "bridge", "", listener=listener)
+    # ``async with`` on the bridge releases its command socket on the way out;
+    # the listener has its own lifecycle and is closed by its own block.
+    async with (
+        StatusListener(host) as listener,
+        Bridge(host, DEFAULT_PORT, "bridge", "", listener=listener) as bridge,
+    ):
         try:
             # Each call returns the bridge's own echo. Update your state from
             # that, never from the value you asked for.
@@ -50,8 +54,6 @@ async def main(host: str, room: int, channel: int) -> None:
             # The command was sent twice and the bridge never reported a
             # change. This is the failure the acknowledgement used to hide.
             print(f"command not confirmed: {err}")
-        finally:
-            await bridge.close()
 
 
 if __name__ == "__main__":

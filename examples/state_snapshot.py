@@ -40,9 +40,11 @@ def print_snapshot(snapshot) -> None:
 
 
 async def main(host: str) -> None:
-    async with aiohttp.ClientSession() as session, StatusListener(host) as listener:
-        bridge = Bridge(host, DEFAULT_PORT, "bridge", "", listener=listener)
-
+    async with (
+        aiohttp.ClientSession() as session,
+        StatusListener(host) as listener,
+        Bridge(host, DEFAULT_PORT, "bridge", "", listener=listener) as bridge,
+    ):
         snapshot = await bridge.get_state_snapshot(session)
         print("=== initial snapshot ===")
         print_snapshot(snapshot)
@@ -53,6 +55,8 @@ async def main(host: str) -> None:
             snapshot = snapshot.apply(message)
             print(f"applied {message}")
             if snapshot.level_table_stale:
+                # A keypad rewrote a scene definition, so every scene-derived
+                # level is now suspect until the table is re-read.
                 print("a scene was re-stored; the level table needs refreshing")
 
         listener.subscribe(on_message)

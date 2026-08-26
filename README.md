@@ -51,8 +51,11 @@ It binds with `SO_REUSEADDR` and `SO_REUSEPORT`, so several processes on one
 host can listen at once; it accepts datagrams only from the bridge's address
 (any source port — the bridge broadcasts from an ephemeral one); and it
 suppresses the duplicate broadcasts the bridge itself emits ~200 ms apart.
-Health is observable via `listener.health()` — `is_running`,
-`last_message_at`, `restart_count` — or an `on_health_change` callback.
+Health and counters live on `listener.health` — `is_running`,
+`last_message_at`, `restart_count`, `messages_received`, `ignored_packets`,
+`suppressed_duplicates`, `last_error` — which returns a copy, or arrive via an
+`on_health_change` callback. Subscribe with `include_duplicates=True` to see
+messages the dedupe window would otherwise hide.
 
 Every instruction is decoded, including fades, stop, store, ident and the
 undocumented `0x33`. Anything unrecognised arrives as an `UnknownStatusMessage`
@@ -69,8 +72,10 @@ once on silence, then raise.
 ```python
 from python_rako import Bridge, RakoCommandError, StatusListener
 
-async with StatusListener(host) as listener:
-    bridge = Bridge(host, 9761, name, mac, listener=listener)
+async with (
+    StatusListener(host) as listener,
+    Bridge(host, 9761, name, mac, listener=listener) as bridge,
+):
     try:
         echo = await bridge.set_channel_level(room_id=7, channel_id=2, level=255)
         print("confirmed by the bridge:", echo)
@@ -79,10 +84,18 @@ async with StatusListener(host) as listener:
 ```
 
 Update your state from the returned echo, never from the value you asked for.
-Without a listener the commands still send, but return `None` rather than
-claiming a success they cannot demonstrate. `set_room_scene`, `set_room_level`,
-`set_channel_level`, `fade_up`, `fade_down` and `stop_fade` all work this way;
-pass `verify=False` to opt out.
+`set_room_scene`, `set_room_level`, `set_channel_level`, `fade_up`, `fade_down`
+and `stop_fade` all work this way; pass `verify=False` to opt out.
+
+A command returns `None` whenever it could not be verified — no listener
+attached, the listener not currently receiving, `verify=False`, or a command
+the bridge does not echo — rather than claiming a success it cannot
+demonstrate. `RakoCommandError` means the bridge stayed silent after a send and
+a resend; `RakoUnsupportedCommandError` means the transport cannot express the
+command at all (the HTTP commander has no fade), and is never retried.
+
+Use `async with Bridge(...)` or call `await bridge.close()` when you are done:
+the UDP command transport keeps one socket open for the bridge's lifetime.
 See [`examples/verified_commands.py`](examples/verified_commands.py).
 
 ### State snapshot
@@ -104,7 +117,15 @@ cache-derived values to a room only when the cached scene differs from the one
 being tracked, so a level the bridge actually broadcast is never overwritten by
 the approximate level a scene implies. Rooms missing from the scene cache are
 reported as unknown, never as off — the bridge deletes fade-controlled rooms
-from that cache by design.
+from that cache by design. A room that has just faded keeps its
+`UNKNOWN_AFTER_FADE` channels even if a cache read still reports the scene it
+faded out of: that cache entry has simply not caught up.
+
+When a STORE broadcast sets `snapshot.level_table_stale`, a keypad has
+rewritten a scene definition, so every scene-derived level is suspect. Clear it
+by actually re-reading the table — `await bridge.refresh_level_table()`, or
+`get_state_snapshot(session, refresh_level_table=True)`; reconciling against
+the table you already had leaves the flag set.
 See [`examples/state_snapshot.py`](examples/state_snapshot.py).
 
 ## Changelog & Releases

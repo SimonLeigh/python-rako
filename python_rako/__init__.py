@@ -18,9 +18,11 @@ from python_rako.commands import (  # noqa
     fade_command,
     level_command,
     scene_command,
+    spec_from_frame,
     stop_command,
 )
 from python_rako.const import (  # noqa
+    MAX_ROOM_ID,
     RAKO_BRIDGE_DEFAULT_PORT,
     CommandType,
     FadeDirection,
@@ -33,6 +35,8 @@ from python_rako.exceptions import (  # noqa
     RakoCommandError,
     RakoConnectionError,
     RakoDiscoveryError,
+    RakoProtocolError,
+    RakoUnsupportedCommandError,
 )
 from python_rako.listener import ListenerHealth, StatusListener  # noqa
 from python_rako.model import (  # noqa

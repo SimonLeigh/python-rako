@@ -40,12 +40,12 @@ import contextlib
 import logging
 from dataclasses import dataclass
 from enum import IntEnum
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 import asyncio_dgram
 
 from python_rako.const import (
-    FLAG_USE_DEFAULT_FADE_RATE,
+    FLAG_FADE_DOWN,
     SCENE_COMMAND_TO_NUMBER,
     CommandType,
     FadeDirection,
@@ -60,10 +60,15 @@ from python_rako.protocol import (
     StopFadeMessage,
     decode_packet,
     encode_command,
+    encode_fade_down,
+    encode_fade_up,
+    encode_set_level,
+    encode_set_scene,
+    encode_stop_fade,
 )
 
 if TYPE_CHECKING:
-    from collections.abc import Callable, Iterator
+    from collections.abc import Callable, Iterator, Sequence
 
 _LOGGER = logging.getLogger(__name__)
 
@@ -78,6 +83,7 @@ __all__ = [
     "fade_command",
     "level_command",
     "scene_command",
+    "spec_from_frame",
     "stop_command",
 ]
 
@@ -87,6 +93,10 @@ DEFAULT_VERIFY_TIMEOUT = 1.5
 DEFAULT_RETRIES = 1
 #: The AOK trails the echo by ~500 ms; we read it only for diagnostics.
 ACK_READ_TIMEOUT = 2.0
+
+#: Failures that mean "this socket is no longer usable", as opposed to a bug.
+#: asyncio_dgram raises its own TransportClosed rather than an OSError.
+_SOCKET_ERRORS = (OSError, asyncio_dgram.TransportClosed)
 
 
 class MatchQuality(IntEnum):
@@ -138,7 +148,10 @@ class CommandSpec:
         if self.command is CommandType.FADE_DOWN:
             return FadeDirection.DOWN
         if self.command is CommandType.FADE and self.data:
-            return FadeDirection.DOWN if self.data[0] & 0x01 else FadeDirection.UP
+            # Bit 0 of the flags byte means different things per opcode: on FADE
+            # (0x32) it is the direction, while on SET_SCENE/SET_LEVEL the same
+            # bit is FLAG_USE_DEFAULT_FADE_RATE. Both happen to be 0x01.
+            return FadeDirection.DOWN if self.data[0] & FLAG_FADE_DOWN else FadeDirection.UP
         return None
 
     def match(self, message: StatusMessage) -> MatchQuality:
@@ -211,29 +224,52 @@ _ECHOING_COMMANDS = frozenset(
 # ---------------------------------------------------------------------------
 
 
+def spec_from_frame(byte_list: Sequence[int]) -> CommandSpec:
+    """Read a request frame back into a :class:`CommandSpec`.
+
+    The builders below go through :mod:`python_rako.protocol` and then parse the
+    result, so the payload layout for every command is defined in exactly one
+    place -- the ``encode_*`` function -- and cannot drift from what the encoder
+    (and its tests) produce.
+    """
+    room = (byte_list[2] << 8) | byte_list[3]
+    return CommandSpec(
+        room=room,
+        channel=byte_list[4],
+        command=CommandType(byte_list[5]),
+        data=tuple(byte_list[6:-1]),
+    )
+
+
 def scene_command(room: int, scene: int, channel: int = 0) -> CommandSpec:
-    """Select a scene for a room."""
-    return CommandSpec(room, channel, CommandType.SET_SCENE, (FLAG_USE_DEFAULT_FADE_RATE, scene))
+    """Select a scene for a room (SET_SCENE 0x31)."""
+    return spec_from_frame(encode_set_scene(room, scene, channel))
 
 
 def level_command(room: int, channel: int, level: int) -> CommandSpec:
-    """Drive a channel to an absolute level."""
-    if not 0 <= level <= 255:
-        raise ValueError(f"level must be 0-255, got {level}")
-    return CommandSpec(room, channel, CommandType.SET_LEVEL, (FLAG_USE_DEFAULT_FADE_RATE, level))
+    """Drive a channel to an absolute level (SET_LEVEL 0x34)."""
+    return spec_from_frame(encode_set_level(room, channel, level))
 
 
 def fade_command(
     room: int, channel: int = 0, *, direction: FadeDirection = FadeDirection.UP
 ) -> CommandSpec:
-    """Start a fade; must be terminated with :func:`stop_command`."""
-    command = CommandType.FADE_UP if direction is FadeDirection.UP else CommandType.FADE_DOWN
-    return CommandSpec(room, channel, command)
+    """Start a fade the way a keypad does; terminate it with :func:`stop_command`.
+
+    Uses the press/release pair FADE_UP (0x01) / FADE_DOWN (0x02) rather than
+    the parameterised FADE (0x32), because that is the form the protocol
+    document's worked example uses and the form keypads broadcast -- so the
+    echo we wait for looks like the one a keypad produces.
+    """
+    frame = encode_fade_up(room, channel)
+    if direction is FadeDirection.DOWN:
+        frame = encode_fade_down(room, channel)
+    return spec_from_frame(frame)
 
 
 def stop_command(room: int, channel: int = 0) -> CommandSpec:
-    """Stop a running fade."""
-    return CommandSpec(room, channel, CommandType.STOP_FADING)
+    """Stop a running fade (STOP 0x0F)."""
+    return spec_from_frame(encode_stop_fade(room, channel))
 
 
 # ---------------------------------------------------------------------------
@@ -245,7 +281,6 @@ def stop_command(room: int, channel: int = 0) -> CommandSpec:
 class _Waiter:
     spec: CommandSpec
     future: asyncio.Future[StatusMessage]
-    sequence: int
 
 
 class EchoVerifier:
@@ -257,40 +292,63 @@ class EchoVerifier:
 
     def __init__(self) -> None:
         self._waiters: list[_Waiter] = []
-        self._sequence = 0
+        self._listener: Any | None = None
         self._unsubscribe: Callable[[], None] | None = None
 
     def attach(self, listener: object) -> None:
-        """Subscribe to ``listener``'s messages. Safe to call more than once."""
+        """Subscribe to ``listener``'s messages. Safe to call more than once.
+
+        Subscribes with ``include_duplicates=True`` where the listener supports
+        it: the listener suppresses repeat broadcasts for its other subscribers,
+        but an echo we are waiting for must never be swallowed just because an
+        identical frame happened to arrive moments earlier.
+        """
         self.detach()
         subscribe = getattr(listener, "subscribe", None)
         if subscribe is None:  # pragma: no cover - defensive
             raise TypeError("listener does not support subscribe()")
-        self._unsubscribe = subscribe(self.handle_message)
+        try:
+            self._unsubscribe = subscribe(self.handle_message, include_duplicates=True)
+        except TypeError:  # pragma: no cover - a listener without the option
+            self._unsubscribe = subscribe(self.handle_message)
+        self._listener = listener
 
     def detach(self) -> None:
         if self._unsubscribe is not None:
             self._unsubscribe()
             self._unsubscribe = None
+        self._listener = None
 
     @property
     def pending(self) -> int:
         return len(self._waiters)
 
+    @property
+    def is_ready(self) -> bool:
+        """Whether the attached listener is actually receiving right now.
+
+        A listener that was never started, or that is between restarts, cannot
+        deliver an echo.  Waiting the full verify window and then blaming the
+        bridge would be a lie, so callers check this first.
+        """
+        if self._listener is None:
+            return False
+        return bool(getattr(self._listener, "is_running", True))
+
     def handle_message(self, message: StatusMessage) -> None:
-        """Give ``message`` to the best-matching pending command, if any."""
+        """Give ``message`` to the best-matching pending command, if any.
+
+        ``_waiters`` is kept in registration order, so scanning it forwards and
+        keeping only a *strictly* better match resolves ties oldest-first (FIFO)
+        without needing a sequence number.
+        """
         best: _Waiter | None = None
         best_quality = MatchQuality.NONE
         for waiter in self._waiters:
             if waiter.future.done():
                 continue
             quality = waiter.spec.match(message)
-            if quality is MatchQuality.NONE:
-                continue
-            # Best match wins; ties go to the oldest command (FIFO).
-            if quality > best_quality or (
-                quality == best_quality and best is not None and waiter.sequence < best.sequence
-            ):
+            if quality > best_quality:
                 best, best_quality = waiter, quality
         if best is not None:
             best.future.set_result(message)
@@ -299,8 +357,7 @@ class EchoVerifier:
     def expect(self, spec: CommandSpec) -> Iterator[asyncio.Future[StatusMessage]]:
         """Register a waiter for ``spec`` for the duration of the block."""
         loop = asyncio.get_running_loop()
-        self._sequence += 1
-        waiter = _Waiter(spec, loop.create_future(), self._sequence)
+        waiter = _Waiter(spec, loop.create_future())
         self._waiters.append(waiter)
         try:
             yield waiter.future
@@ -326,16 +383,31 @@ class CommandSender:
     async def send(self, spec: CommandSpec) -> None:
         raise NotImplementedError
 
+    def on_verified(self) -> None:
+        """Called when an echo has confirmed the most recent command.
+
+        The default does nothing; transports use it to abandon diagnostics that
+        can no longer tell us anything.
+        """
+
     async def close(self) -> None:
-        """Release any resources held for diagnostics."""
+        """Release any resources held by this transport."""
 
 
 class UdpCommandSender(CommandSender):
-    """Send commands as UDP requests to the bridge.
+    """Send commands as UDP requests to the bridge over one reused socket.
 
-    The bridge's ``"AOK"`` reply is read in the background purely for
-    diagnostics: it arrives long after the echo, so blocking on it would make
-    every command three times slower for no extra truth.
+    A single connected datagram socket is kept for the lifetime of the sender
+    and recreated if it errors, rather than opening one per command.
+
+    The bridge's ``"AOK"`` reply is read by at most one short-lived background
+    task, purely for diagnostics: the ack arrives long after the echo, so
+    blocking on it would make every command three times slower for no extra
+    truth.  Once an echo has confirmed the command the ack can no longer tell
+    us anything, so :meth:`on_verified` abandons the read.
+
+    Call :meth:`close` when done -- :meth:`python_rako.Bridge.close` does it for
+    you, and ``async with Bridge(...)`` does it automatically.
     """
 
     def __init__(self, host: str, port: int) -> None:
@@ -344,56 +416,97 @@ class UdpCommandSender(CommandSender):
         self.ack_count = 0
         self.error_ack_count = 0
         self.last_ack: AckPacket | None = None
-        self._ack_tasks: set[asyncio.Task[None]] = set()
+        self._client: Any | None = None
+        self._ack_task: asyncio.Task[None] | None = None
+        self._closed = False
+
+    async def _connect(self) -> Any:
+        if self._client is None:
+            try:
+                self._client = await asyncio_dgram.connect((self.host, self.port))
+            except OSError as err:
+                raise RakoConnectionError(
+                    f"cannot reach Rako bridge at {self.host}:{self.port}: {err}"
+                ) from err
+        return self._client
+
+    def _drop_client(self) -> None:
+        client, self._client = self._client, None
+        if client is not None:
+            with contextlib.suppress(Exception):
+                client.close()
 
     async def send(self, spec: CommandSpec) -> None:
+        if self._closed:
+            raise RakoConnectionError("command sender is closed")
         byte_list = spec.to_byte_list()
         _LOGGER.debug("Sending Rako command %s as %s", spec, byte_list)
-        try:
-            client = await asyncio_dgram.connect((self.host, self.port))
-        except OSError as err:
-            raise RakoConnectionError(
-                f"cannot reach Rako bridge at {self.host}:{self.port}: {err}"
-            ) from err
-        try:
-            await client.send(bytes(byte_list))
-        except OSError as err:
-            client.close()
-            raise RakoConnectionError(f"failed to send Rako command: {err}") from err
+        payload = bytes(byte_list)
 
-        task = asyncio.ensure_future(self._drain_ack(client))
-        self._ack_tasks.add(task)
-        task.add_done_callback(self._ack_tasks.discard)
+        for attempt in (1, 2):
+            client = await self._connect()
+            try:
+                await client.send(payload)
+            except _SOCKET_ERRORS as err:
+                # A connected UDP socket can go stale (interface change, route
+                # loss). Drop it and let the second attempt build a fresh one.
+                self._drop_client()
+                if attempt == 2:
+                    raise RakoConnectionError(f"failed to send Rako command: {err}") from err
+                _LOGGER.debug("Rebuilding Rako command socket after %s", err)
+                continue
+            break
 
-    async def _drain_ack(self, client: object) -> None:
-        try:
-            data, _ = await asyncio.wait_for(
-                client.recv(),  # type: ignore[attr-defined]
-                timeout=ACK_READ_TIMEOUT,
-            )
-        except (TimeoutError, asyncio.CancelledError):
+        self._start_ack_read()
+
+    def _start_ack_read(self) -> None:
+        if self._ack_task is not None and not self._ack_task.done():
+            return  # one reader is enough; it will pick up this reply too
+        self._ack_task = asyncio.ensure_future(self._drain_ack())
+
+    async def _drain_ack(self) -> None:
+        """Read one reply, bounded by ACK_READ_TIMEOUT, then stop.
+
+        Diagnostics only: never raises, never blocks a command, and never
+        outlives its timeout.
+        """
+        client = self._client
+        if client is None:
             return
+        try:
+            data, _ = await asyncio.wait_for(client.recv(), timeout=ACK_READ_TIMEOUT)
+        except TimeoutError:
+            return
+        except asyncio.CancelledError:
+            # Propagate: swallowing it would leave the task "finished" and hide
+            # the cancellation from whoever asked for it.
+            raise
         except Exception:  # diagnostics must never break a command
             _LOGGER.debug("Failed reading Rako ack", exc_info=True)
             return
+        packet = decode_packet(data)
+        if isinstance(packet, AckPacket):
+            self.last_ack = packet
+            self.ack_count += 1
+            if not packet.ok:
+                self.error_ack_count += 1
+                _LOGGER.warning("Rako bridge replied AERROR")
         else:
-            packet = decode_packet(data)
-            if isinstance(packet, AckPacket):
-                self.last_ack = packet
-                self.ack_count += 1
-                if not packet.ok:
-                    self.error_ack_count += 1
-                    _LOGGER.warning("Rako bridge replied AERROR")
-            else:
-                _LOGGER.debug("Unexpected reply to a command: %s", packet)
-        finally:
-            with contextlib.suppress(Exception):
-                client.close()  # type: ignore[attr-defined]
+            _LOGGER.debug("Unexpected reply to a command: %s", packet)
+
+    def on_verified(self) -> None:
+        """The echo already proved the command worked; stop reading the ack."""
+        if self._ack_task is not None and not self._ack_task.done():
+            self._ack_task.cancel()
 
     async def close(self) -> None:
-        for task in list(self._ack_tasks):
+        self._closed = True
+        task, self._ack_task = self._ack_task, None
+        if task is not None and not task.done():
             task.cancel()
-        self._ack_tasks.clear()
+            with contextlib.suppress(asyncio.CancelledError):
+                await task
+        self._drop_client()
 
 
 # ---------------------------------------------------------------------------
@@ -412,22 +525,38 @@ async def execute_command(
 ) -> StatusMessage | None:
     """Send ``spec`` and, when verifying, return the bridge's echo.
 
-    Returns ``None`` when verification was not performed -- either because
-    ``verify=False`` or because no verifier is attached.  It never returns a
-    truthy "probably fine": an unverified command is reported as unverified.
+    Returns ``None`` when verification was not performed -- ``verify=False``, no
+    verifier attached, a listener that is not currently receiving, or a command
+    the bridge does not echo.  It never returns a truthy "probably fine": an
+    unverified command is reported as unverified.
 
     :raises RakoCommandError: the command was sent ``retries + 1`` times and the
         bridge never broadcast a matching change.
+    :raises RakoUnsupportedCommandError: the transport cannot express this
+        command.  Propagated immediately and never retried, because resending
+        it can only fail the same way.
     """
     if not verify or verifier is None:
         if verify and verifier is None:
-            log = _LOGGER.debug if sender.warned_unverified else _LOGGER.warning
-            sender.warned_unverified = True
-            log(
+            _warn_unverified(
+                sender,
                 "Sending %s without echo verification: no status listener is "
                 "attached, so a command that silently fails will not be noticed",
                 spec,
             )
+        await sender.send(spec)
+        return None
+
+    if not verifier.is_ready:
+        # The listener exists but is not receiving -- never started, or between
+        # restarts. Waiting the full window and then reporting "the bridge did
+        # not confirm" would blame the wrong component.
+        _warn_unverified(
+            sender,
+            "Sending %s without echo verification: the status listener is not "
+            "running, so no echo can arrive",
+            spec,
+        )
         await sender.send(spec)
         return None
 
@@ -439,6 +568,8 @@ async def execute_command(
     attempts = retries + 1
     for attempt in range(1, attempts + 1):
         with verifier.expect(spec) as echo:
+            # RakoUnsupportedCommandError from send() deliberately escapes the
+            # retry loop: no number of resends can make the transport carry it.
             await sender.send(spec)
             try:
                 message = await asyncio.wait_for(echo, timeout=verify_timeout)
@@ -452,12 +583,24 @@ async def execute_command(
                 )
                 continue
             _LOGGER.debug("Command %s verified by echo %s", spec, message)
+            sender.on_verified()
             return message
 
     raise RakoCommandError(
         f"Rako bridge did not confirm {spec.command.name} for room {spec.room} "
         f"channel {spec.channel} after {attempts} attempts"
     )
+
+
+def _warn_unverified(sender: CommandSender, message: str, spec: CommandSpec) -> None:
+    """Warn once per transport, then drop to debug.
+
+    Otherwise a consumer that never attaches a listener gets one warning per
+    light command.
+    """
+    log = _LOGGER.debug if sender.warned_unverified else _LOGGER.warning
+    sender.warned_unverified = True
+    log(message, spec)
 
 
 def as_status_frame(spec: CommandSpec) -> list[int]:

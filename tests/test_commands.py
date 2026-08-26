@@ -21,11 +21,18 @@ from python_rako.commands import (
     UdpCommandSender,
     as_status_frame,
     execute_command,
+    fade_command,
     level_command,
     scene_command,
+    spec_from_frame,
+    stop_command,
 )
-from python_rako.const import CommandType, MessageOrigin, MessageType
-from python_rako.exceptions import RakoCommandError
+from python_rako.const import CommandType, FadeDirection, MessageOrigin, MessageType
+from python_rako.exceptions import (
+    RakoCommandError,
+    RakoConnectionError,
+    RakoUnsupportedCommandError,
+)
 from python_rako.listener import StatusListener
 from python_rako.model import ChannelStatusMessage, SceneStatusMessage
 from python_rako.protocol import (
@@ -34,9 +41,16 @@ from python_rako.protocol import (
     calc_crc,
     decode_status_message,
     encode_command,
+    encode_fade_down,
+    encode_fade_up,
+    encode_set_level,
+    encode_set_scene,
+    encode_stop_fade,
 )
 
 LOOPBACK = "127.0.0.1"
+# TEST-NET-1 (RFC 5737): an address nothing on this host can send from.
+NOT_THE_BRIDGE = "192.0.2.10"
 
 
 def status_frame_for(request: list[int]) -> list[int]:
@@ -186,18 +200,82 @@ async def test_verification_returns_well_before_the_ack(bridge, fake_bridge):
     assert elapsed < 0.3
 
 
-async def test_the_ack_is_still_collected_for_diagnostics(bridge, fake_bridge):
+async def test_the_ack_is_collected_when_there_is_no_echo_to_supersede_it(
+    fake_bridge,
+):
+    """Unverified sends still record the ack, purely as a diagnostic."""
+    fake_bridge.silent = True
     fake_bridge.ack_delay = 0.02
+    sender = UdpCommandSender(LOOPBACK, fake_bridge.port)
+    try:
+        await sender.send(level_command(7, 2, 64))
+        for _ in range(50):
+            if sender.ack_count:
+                break
+            await asyncio.sleep(0.02)
+        assert sender.ack_count == 1
+        assert sender.last_ack is not None
+        assert sender.last_ack.ok is True
+    finally:
+        await sender.close()
+
+
+async def test_a_verified_command_abandons_the_ack_read(bridge, fake_bridge):
+    """Once the echo has proved the command worked, the ack adds nothing."""
+    fake_bridge.ack_delay = 0.5
     await bridge.set_channel_level(7, 2, 64)
-    for _ in range(50):
+    sender = bridge._sender
+    assert isinstance(sender, UdpCommandSender)
+    assert sender._ack_task is not None
+    await asyncio.sleep(0)  # let the cancellation land
+    assert sender._ack_task.cancelled()
+    assert sender.ack_count == 0
+
+
+async def test_one_socket_is_reused_across_commands(bridge, fake_bridge):
+    """A socket (and an ack task) per command would leak both."""
+    await bridge.set_channel_level(7, 2, 10)
+    sender = bridge._sender
+    assert isinstance(sender, UdpCommandSender)
+    first_socket = sender._client
+    await bridge.set_channel_level(7, 2, 20)
+    await bridge.set_channel_level(7, 2, 30)
+    assert sender._client is first_socket
+    assert len(fake_bridge.requests) == 3
+
+
+async def test_a_stale_socket_is_rebuilt_on_send(fake_bridge):
+    """A connected UDP socket can go stale; the next send makes a fresh one."""
+    sender = UdpCommandSender(LOOPBACK, fake_bridge.port)
+    try:
+        await sender.send(level_command(7, 2, 10))
+        broken = sender._client
+        broken.close()  # simulate the socket dying underneath us
+        await sender.send(level_command(7, 2, 20))
+        assert sender._client is not broken
+        await asyncio.sleep(0.05)
+        assert len(fake_bridge.requests) == 2
+    finally:
+        await sender.close()
+
+
+async def test_close_releases_the_socket_and_rejects_further_sends(fake_bridge):
+    sender = UdpCommandSender(LOOPBACK, fake_bridge.port)
+    await sender.send(level_command(7, 2, 10))
+    await sender.close()
+    assert sender._client is None
+    with pytest.raises(RakoConnectionError):
+        await sender.send(level_command(7, 2, 20))
+
+
+async def test_bridge_works_as_an_async_context_manager(fake_bridge, listener):
+    fake_bridge.broadcast_to = (LOOPBACK, listener.local_port)
+    async with Bridge(LOOPBACK, fake_bridge.port, "fake", "mac", listener=listener) as bridge:
+        bridge.verify_timeout = 0.3
+        assert await bridge.set_channel_level(7, 2, 255) == ChannelStatusMessage(7, 2, 255)
         sender = bridge._sender
-        if isinstance(sender, UdpCommandSender) and sender.ack_count:
-            break
-        await asyncio.sleep(0.02)
-    assert isinstance(bridge._sender, UdpCommandSender)
-    assert bridge._sender.ack_count == 1
-    assert bridge._sender.last_ack is not None
-    assert bridge._sender.last_ack.ok is True
+    assert isinstance(sender, UdpCommandSender)
+    assert sender._client is None
 
 
 # ---------------------------------------------------------------------------
@@ -426,8 +504,30 @@ async def test_http_transport_sends_scene_and_level_commands():
 async def test_http_transport_rejects_commands_it_cannot_express():
     commander = _RecordingHttpCommander()
     bridge = Bridge(LOOPBACK, 9761, "fake", "mac", commander)
-    with pytest.raises(RakoCommandError, match="HTTP transport"):
+    with pytest.raises(RakoUnsupportedCommandError, match="HTTP transport"):
         await bridge.fade_up(9, verify=False)
+    # Distinct from "the bridge did not confirm": retrying could never help.
+    assert not issubclass(RakoUnsupportedCommandError, RakoCommandError)
+
+
+async def test_an_unsupported_command_is_never_retried(listener):
+    """Resending a command the transport cannot express only wastes time."""
+    commander = _RecordingHttpCommander()
+    bridge = Bridge(LOOPBACK, 9761, "fake", "mac", commander, listener=listener)
+    bridge.verify_timeout = 0.2
+    sends: list = []
+    original = bridge._sender.send
+
+    async def counting_send(spec):
+        sends.append(spec)
+        await original(spec)
+
+    bridge._sender.send = counting_send
+    started = time.monotonic()
+    with pytest.raises(RakoUnsupportedCommandError):
+        await bridge.fade_up(9)
+    assert len(sends) == 1
+    assert time.monotonic() - started < 0.2  # no verify window was waited out
 
 
 async def test_execute_command_without_a_verifier_warns_once(fake_bridge, caplog):
@@ -451,3 +551,110 @@ async def test_the_unverified_warning_is_not_repeated_per_command(fake_bridge, c
         await sender.close()
     warnings = [r for r in caplog.records if r.levelname == "WARNING"]
     assert len(warnings) == 1
+
+
+# ---------------------------------------------------------------------------
+# Verification the listener cannot provide
+# ---------------------------------------------------------------------------
+
+
+async def test_a_listener_that_was_never_started_does_not_blame_the_bridge(fake_bridge, caplog):
+    """No echo can arrive, so waiting for one and raising would be a lie."""
+    fake_bridge.silent = True
+    idle = StatusListener(LOOPBACK, port=0, listen_host=LOOPBACK)
+    bridge = Bridge(LOOPBACK, fake_bridge.port, "fake", "mac", listener=idle)
+    bridge.verify_timeout = 5.0  # would be a long, wrong wait
+    try:
+        started = time.monotonic()
+        result = await bridge.set_channel_level(7, 2, 255)
+        elapsed = time.monotonic() - started
+        assert result is None
+        assert elapsed < 0.5
+        assert "listener is not running" in caplog.text
+        await asyncio.sleep(0.05)
+        assert len(fake_bridge.requests) == 1
+    finally:
+        await bridge.close()
+
+
+async def test_a_crashed_listener_falls_back_instead_of_raising(bridge, fake_bridge, listener):
+    fake_bridge.silent = True
+    await listener.stop()
+    bridge.verify_timeout = 5.0
+    started = time.monotonic()
+    assert await bridge.set_channel_level(7, 2, 255) is None
+    assert time.monotonic() - started < 0.5
+
+
+async def test_a_duplicate_broadcast_can_still_confirm_a_command(bridge, fake_bridge, listener):
+    """De-duplication must never swallow the echo of a command in flight.
+
+    The bridge re-broadcasts some events ~200 ms apart, and the listener
+    suppresses the repeat. If that suppression also hid it from the echo
+    verifier, a command that worked would be reported as failed.
+    """
+    frame = as_status_frame(level_command(7, 2, 200))
+    # An identical broadcast lands first, so the echo will look like a repeat.
+    fake_bridge._sock.sendto(bytes(frame), (LOOPBACK, listener.local_port))
+    await asyncio.sleep(0.05)
+    assert listener.health.messages_received == 1
+
+    message = await bridge.set_channel_level(7, 2, 200)
+
+    assert message == ChannelStatusMessage(7, 2, 200)
+    assert listener.health.suppressed_duplicates >= 1
+
+
+async def test_echoes_are_only_accepted_from_the_configured_bridge(bridge, fake_bridge, listener):
+    """Broadcasts from any other host must not be able to confirm a command.
+
+    Echo matching is only sound because the listener filters on the bridge
+    address before anything reaches the verifier.
+    """
+    # The fake bridge still echoes, but the listener now expects a different
+    # source address, so its broadcast counts as somebody else's traffic.
+    listener.bridge_host = NOT_THE_BRIDGE
+    with pytest.raises(RakoCommandError):
+        await bridge.set_channel_level(7, 2, 255)
+    assert listener.health.ignored_packets >= 1
+    assert listener.health.messages_received == 0
+
+
+async def test_attaching_a_listener_for_a_different_bridge_warns(fake_bridge, caplog):
+    other = StatusListener(NOT_THE_BRIDGE, port=0, listen_host=LOOPBACK)
+    bridge = Bridge(LOOPBACK, fake_bridge.port, "fake", "mac")
+    bridge.attach_listener(other)
+    assert "wrong bridge" in caplog.text
+    await bridge.close()
+
+
+# ---------------------------------------------------------------------------
+# One definition of each command payload
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "spec,expected_frame",
+    [
+        (scene_command(7, 5), encode_set_scene(7, 5)),
+        (level_command(7, 2, 129), encode_set_level(7, 2, 129)),
+        (fade_command(9), encode_fade_up(9)),
+        (fade_command(9, direction=FadeDirection.DOWN), encode_fade_down(9)),
+        (stop_command(9), encode_stop_fade(9)),
+    ],
+)
+def test_command_specs_serialise_to_the_protocol_encoders_output(spec, expected_frame):
+    """The spec builders and the encoders cannot drift apart."""
+    assert spec.to_byte_list() == expected_frame
+
+
+def test_fade_commands_use_the_keypad_press_release_form():
+    """Not the parameterised FADE (0x32) -- keypads broadcast FADE_UP/DOWN."""
+    assert fade_command(9).command is CommandType.FADE_UP
+    assert fade_command(9, direction=FadeDirection.DOWN).command is CommandType.FADE_DOWN
+    assert fade_command(9).data == ()
+
+
+def test_spec_from_frame_round_trips_every_field():
+    spec = CommandSpec(1019, 3, CommandType.SET_LEVEL, (1, 64))
+    assert spec_from_frame(spec.to_byte_list()) == spec

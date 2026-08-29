@@ -18,7 +18,7 @@ from python_rako.commands import CommandSpec, level_command, scene_command, stop
 from python_rako.const import CommandType
 from python_rako.exceptions import RakoCommandError, RakoQueueClosedError
 from python_rako.model import ChannelStatusMessage, SceneStatusMessage, StatusMessage
-from python_rako.queue import DEFAULT_MIN_COMMAND_INTERVAL, CommandQueue
+from python_rako.pacing import DEFAULT_MIN_COMMAND_INTERVAL, CommandQueue
 
 #: Short enough to keep the suite fast, long enough that a send that ignored
 #: pacing would land inside the same event-loop tick and be caught.

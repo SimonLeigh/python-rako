@@ -30,7 +30,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a room whose last event was a fade.
 - `Bridge.get_scene_cache_http()` reads the scene cache over HTTP
   (`scenes.htm`) so polling never contends with the UDP listener socket.
-- **Command pacing** (`python_rako.queue.CommandQueue`): every command now goes
+- **Command pacing** (`python_rako.pacing.CommandQueue`): every command now goes
   through a per-bridge FIFO queue that sends no faster than
   `min_command_interval` (default `DEFAULT_MIN_COMMAND_INTERVAL` = 1.5 s,
   assumed pending live measurement) and never overlaps a command still waiting

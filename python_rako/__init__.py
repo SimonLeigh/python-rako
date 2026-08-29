@@ -58,6 +58,11 @@ from python_rako.model import (  # noqa
     UnsupportedMessage,
     Ventilation,
 )
+from python_rako.pacing import (  # noqa
+    DEFAULT_MIN_COMMAND_INTERVAL,
+    CommandQueue,
+    CommandQueueStats,
+)
 from python_rako.protocol import (  # noqa
     AckPacket,
     CacheReplyPacket,
@@ -78,11 +83,6 @@ from python_rako.protocol import (  # noqa
     decode_status_message,
     encode_command,
     validate_crc,
-)
-from python_rako.queue import (  # noqa
-    DEFAULT_MIN_COMMAND_INTERVAL,
-    CommandQueue,
-    CommandQueueStats,
 )
 from python_rako.state import (  # noqa
     BridgeStateSnapshot,

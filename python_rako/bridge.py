@@ -50,8 +50,8 @@ from python_rako.model import (
     RoomVentilation,
     SceneCache,
 )
+from python_rako.pacing import DEFAULT_MIN_COMMAND_INTERVAL, CommandQueue
 from python_rako.protocol import decode_scene_cache_hex
-from python_rako.queue import DEFAULT_MIN_COMMAND_INTERVAL, CommandQueue
 from python_rako.state import BridgeStateSnapshot
 
 if TYPE_CHECKING:
@@ -290,7 +290,7 @@ class Bridge:
     def command_queue(self) -> CommandQueue:
         """The pacing queue every command goes through.
 
-        Read :attr:`~python_rako.queue.CommandQueue.stats` for diagnostics
+        Read :attr:`~python_rako.pacing.CommandQueue.stats` for diagnostics
         (depth, age of the oldest waiting request, sent/coalesced/failed).
         """
         return self._command_queue
@@ -339,7 +339,7 @@ class Bridge:
         while this one is still waiting, this call returns *that* command's
         echo -- the bridge only honours the last one, so it is the truthful
         answer to "where did this channel end up".  See
-        :mod:`python_rako.queue`.
+        :mod:`python_rako.pacing`.
 
         Returns ``None`` when the command was not verified -- ``verify=False``,
         no listener attached, or a command the bridge does not echo.  It never

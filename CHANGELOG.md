@@ -30,6 +30,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   a room whose last event was a fade.
 - `Bridge.get_scene_cache_http()` reads the scene cache over HTTP
   (`scenes.htm`) so polling never contends with the UDP listener socket.
+- **Command pacing** (`python_rako.queue.CommandQueue`): every command now goes
+  through a per-bridge FIFO queue that sends no faster than
+  `min_command_interval` (default `DEFAULT_MIN_COMMAND_INTERVAL` = 1.5 s,
+  assumed pending live measurement) and never overlaps a command still waiting
+  for its echo. Requests that arrive too fast are queued, never dropped — the
+  bridge silently ignores commands sent too close together. Commands for the
+  same `(room, channel)` coalesce: a newer one replaces a waiting one in place,
+  keeping its queue position, so a slider drag becomes a single send and the
+  superseded callers get the echo of the command that actually ran. Diagnostics
+  via `bridge.command_queue.stats` (depth, oldest age, sent/coalesced/failed),
+  `drain()` for orderly shutdown, `paced=False` on `send_command`/`set_*` as a
+  direct escape hatch, and a runtime-settable `bridge.min_command_interval`.
+  New exception `RakoQueueClosedError` (a `RakoCommandError`) for commands a
+  closed queue will never send.
+- `scripts/measure_interval.py`: live tool that finds the bridge's real minimum
+  safe interval by sending echo-verified off/on pairs at decreasing intervals,
+  and recommends a `min_interval` from the result.
 - `Bridge` is now an async context manager; `Bridge.close()` releases sockets.
 - `discover_bridge(timeout=5.0)`; new exceptions `RakoDiscoveryError`,
   `RakoUnsupportedCommandError`, `RakoProtocolError`.

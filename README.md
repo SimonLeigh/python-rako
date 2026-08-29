@@ -98,6 +98,69 @@ Use `async with Bridge(...)` or call `await bridge.close()` when you are done:
 the UDP command transport keeps one socket open for the bridge's lifetime.
 See [`examples/verified_commands.py`](examples/verified_commands.py).
 
+### Command pacing
+
+A Rako bridge silently drops commands that arrive too close together — it
+accepts the frame, never acts on it, and says nothing. Home Assistant will
+happily issue twenty level changes while a slider is dragged, so every command
+goes through a per-bridge queue that sends no faster than
+`min_command_interval` (default `1.5` s) and never more than one verified
+command at a time.
+
+```python
+bridge = Bridge(host, 9761, name, mac, listener=listener, min_command_interval=1.5)
+
+# Twenty rapid levels for one channel; the queue sends the first, then one
+# more carrying the final level. Nothing is dropped, nothing is sent too fast.
+await asyncio.gather(*(bridge.set_channel_level(7, 2, level) for level in levels))
+```
+
+Requests that arrive too soon are **queued, never dropped**, and sent in order.
+While a command for a `(room, channel)` is still waiting, a newer command for
+the same target **replaces it in place**: it keeps the original queue position
+and takes the new payload, so a slider drag costs one send instead of twenty.
+Different kinds of command coalesce too (a scene selection replaces a pending
+level for the same target), because the bridge only honours whichever arrives
+last anyway.
+
+A superseded request does not fail and does not return `None`: it resolves with
+the result of the command that replaced it — the echo the bridge sent for the
+value it actually applied. `await bridge.set_channel_level(...)` therefore
+always describes where the channel really ended up.
+
+The next send waits for `max(previous send + min_command_interval, previous
+echo-or-failure)`, so a slow verification is never overlapped with the next
+command. A failing command's exception goes to its own caller and the queue
+carries on.
+
+```python
+stats = bridge.command_queue.stats
+# depth, oldest_age, in_flight, sent, coalesced, failed, min_interval
+
+bridge.min_command_interval = 1.0        # adjustable at runtime
+await bridge.command_queue.drain()       # let everything queued land
+await bridge.send_command(spec, paced=False)  # tooling escape hatch
+```
+
+`bridge.close()` closes the queue; anything still queued raises
+`RakoQueueClosedError` (a `RakoCommandError`), so nothing waits forever on a
+queue that will never run again. Call `drain()` first if you want queued
+commands to land.
+
+The 1.5 s default is **assumed, not measured** — it is the echo-verify window,
+known to be safe. [`scripts/measure_interval.py`](scripts/measure_interval.py)
+finds the real floor against a live bridge by sending off/on pairs at
+decreasing intervals until an echo goes missing:
+
+```console
+$ RAKO_BRIDGE_HOST=192.0.2.10 python scripts/measure_interval.py \
+    --room 7 --channel 2 --i-know-this-changes-lights
+```
+
+It switches a real circuit, so it refuses to run without that flag, restores
+the channel's original level afterwards, and stops at the first interval that
+loses anything.
+
 ### State snapshot
 
 `BridgeStateSnapshot` records a level *and where it came from*, which is what

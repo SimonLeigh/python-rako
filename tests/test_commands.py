@@ -153,7 +153,9 @@ async def listener():
 async def bridge(fake_bridge, listener):
     """A Bridge wired to the fake bridge with echo verification enabled."""
     fake_bridge.broadcast_to = (LOOPBACK, listener.local_port)
-    bridge = Bridge(LOOPBACK, fake_bridge.port, "fake", "00:00:00:00:00:00")
+    # Pacing is off here so these tests measure verification, not the queue;
+    # the queue has its own suite in tests/test_command_queue.py.
+    bridge = Bridge(LOOPBACK, fake_bridge.port, "fake", "00:00:00:00:00:00", min_command_interval=0)
     bridge.verify_timeout = 0.3
     bridge.attach_listener(listener)
     yield bridge
@@ -399,10 +401,16 @@ async def test_commands_to_different_targets_verify_independently(bridge, fake_b
 async def test_two_commands_to_the_same_channel_do_not_steal_each_others_echoes(
     bridge, fake_bridge
 ):
+    """Overlapping commands each get their own echo.
+
+    ``paced=False`` because the queue would otherwise coalesce these two into
+    one send (see ``tests/test_command_queue.py``); what is under test here is
+    the verifier's ability to keep two genuinely concurrent echoes apart.
+    """
     fake_bridge.echo_delay = 0.05
     first, second = await asyncio.gather(
-        bridge.set_channel_level(7, 2, 10),
-        bridge.set_channel_level(7, 2, 200),
+        bridge.send_command(level_command(7, 2, 10), paced=False),
+        bridge.send_command(level_command(7, 2, 200), paced=False),
     )
     assert first == ChannelStatusMessage(7, 2, 10)
     assert second == ChannelStatusMessage(7, 2, 200)
@@ -494,7 +502,7 @@ class _RecordingHttpCommander(BridgeCommanderHTTP):
 
 async def test_http_transport_sends_scene_and_level_commands():
     commander = _RecordingHttpCommander()
-    bridge = Bridge(LOOPBACK, 9761, "fake", "mac", commander)
+    bridge = Bridge(LOOPBACK, 9761, "fake", "mac", commander, min_command_interval=0)
     await bridge.set_room_scene(6, 2, verify=False)
     await bridge.set_channel_level(7, 2, 129, verify=False)
     assert commander.scenes == [(6, 2)]
@@ -503,7 +511,7 @@ async def test_http_transport_sends_scene_and_level_commands():
 
 async def test_http_transport_rejects_commands_it_cannot_express():
     commander = _RecordingHttpCommander()
-    bridge = Bridge(LOOPBACK, 9761, "fake", "mac", commander)
+    bridge = Bridge(LOOPBACK, 9761, "fake", "mac", commander, min_command_interval=0)
     with pytest.raises(RakoUnsupportedCommandError, match="HTTP transport"):
         await bridge.fade_up(9, verify=False)
     # Distinct from "the bridge did not confirm": retrying could never help.
@@ -513,7 +521,9 @@ async def test_http_transport_rejects_commands_it_cannot_express():
 async def test_an_unsupported_command_is_never_retried(listener):
     """Resending a command the transport cannot express only wastes time."""
     commander = _RecordingHttpCommander()
-    bridge = Bridge(LOOPBACK, 9761, "fake", "mac", commander, listener=listener)
+    bridge = Bridge(
+        LOOPBACK, 9761, "fake", "mac", commander, listener=listener, min_command_interval=0
+    )
     bridge.verify_timeout = 0.2
     sends: list = []
     original = bridge._sender.send

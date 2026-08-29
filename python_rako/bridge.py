@@ -51,6 +51,7 @@ from python_rako.model import (
     SceneCache,
 )
 from python_rako.protocol import decode_scene_cache_hex
+from python_rako.queue import DEFAULT_MIN_COMMAND_INTERVAL, CommandQueue
 from python_rako.state import BridgeStateSnapshot
 
 if TYPE_CHECKING:
@@ -196,6 +197,7 @@ class Bridge:
         *,
         listener: StatusListener | None = None,
         verify_timeout: float = DEFAULT_VERIFY_TIMEOUT,
+        min_command_interval: float = DEFAULT_MIN_COMMAND_INTERVAL,
     ):
         self.host = host
         self.port = port
@@ -219,6 +221,13 @@ class Bridge:
         self._echo_verifier = EchoVerifier()
         self._listener: StatusListener | None = None
         self._command_sender: CommandSender | None = None
+        # Every command goes through here by default: the bridge silently drops
+        # commands that arrive too close together (BRIDGE_BEHAVIOUR.md fact 12).
+        self._command_queue = CommandQueue(
+            self._execute,
+            min_interval=min_command_interval,
+            name=f"{host}:{port}",
+        )
         if listener is not None:
             self.attach_listener(listener)
 
@@ -275,7 +284,27 @@ class Bridge:
                 self._command_sender = UdpCommandSender(self.host, self.port)
         return self._command_sender
 
-    async def send_command(
+    # -- command pacing ----------------------------------------------------
+
+    @property
+    def command_queue(self) -> CommandQueue:
+        """The pacing queue every command goes through.
+
+        Read :attr:`~python_rako.queue.CommandQueue.stats` for diagnostics
+        (depth, age of the oldest waiting request, sent/coalesced/failed).
+        """
+        return self._command_queue
+
+    @property
+    def min_command_interval(self) -> float:
+        """Minimum seconds between sends to this bridge; settable at runtime."""
+        return self._command_queue.min_interval
+
+    @min_command_interval.setter
+    def min_command_interval(self, value: float) -> None:
+        self._command_queue.min_interval = value
+
+    async def _execute(
         self,
         spec: CommandSpec,
         *,
@@ -283,15 +312,7 @@ class Bridge:
         verify_timeout: float | None = None,
         retries: int = DEFAULT_RETRIES,
     ) -> StatusMessage | None:
-        """Send a command and return the bridge's echo confirming it happened.
-
-        Returns ``None`` when the command was not verified -- ``verify=False``,
-        no listener attached, or a command the bridge does not echo.  It never
-        claims success it cannot demonstrate.
-
-        :raises RakoCommandError: no matching broadcast arrived after the
-            initial send and ``retries`` resends.
-        """
+        """Put one command on the wire, bypassing the queue. See ``paced=False``."""
         return await execute_command(
             self._sender,
             spec,
@@ -299,6 +320,45 @@ class Bridge:
             verify=verify,
             verify_timeout=self.verify_timeout if verify_timeout is None else verify_timeout,
             retries=retries,
+        )
+
+    async def send_command(
+        self,
+        spec: CommandSpec,
+        *,
+        verify: bool = True,
+        verify_timeout: float | None = None,
+        retries: int = DEFAULT_RETRIES,
+        paced: bool = True,
+    ) -> StatusMessage | None:
+        """Send a command and return the bridge's echo confirming it happened.
+
+        The command is queued behind whatever else is pending for this bridge
+        and sent no sooner than :attr:`min_command_interval` after the previous
+        one.  If a newer command for the same room and channel is submitted
+        while this one is still waiting, this call returns *that* command's
+        echo -- the bridge only honours the last one, so it is the truthful
+        answer to "where did this channel end up".  See
+        :mod:`python_rako.queue`.
+
+        Returns ``None`` when the command was not verified -- ``verify=False``,
+        no listener attached, or a command the bridge does not echo.  It never
+        claims success it cannot demonstrate.
+
+        :param paced: ``False`` sends immediately, ignoring (and not disturbing)
+            the queue.  For tooling that is deliberately measuring the bridge's
+            timing; normal callers should leave it alone.
+        :raises RakoCommandError: no matching broadcast arrived after the
+            initial send and ``retries`` resends.
+        :raises RakoQueueClosedError: the bridge was closed before the queued
+            command was sent.
+        """
+        if not paced:
+            return await self._execute(
+                spec, verify=verify, verify_timeout=verify_timeout, retries=retries
+            )
+        return await self._command_queue.submit(
+            spec, verify=verify, verify_timeout=verify_timeout, retries=retries
         )
 
     async def close(self) -> None:
@@ -309,7 +369,12 @@ class Bridge:
         stay open until the event loop shuts down.  It does *not* stop an
         attached listener: the listener has its own lifecycle and may be shared
         between bridges or outlive one.
+
+        Anything still queued fails with
+        :class:`~python_rako.exceptions.RakoQueueClosedError`; call
+        ``bridge.command_queue.drain()`` first to let it land.
         """
+        await self._command_queue.close()
         if self._command_sender is not None:
             await self._command_sender.close()
             self._command_sender = None
@@ -627,7 +692,7 @@ class Bridge:
         return level_cache
 
     async def set_room_scene(
-        self, room_id: int, scene: int, *, verify: bool = True
+        self, room_id: int, scene: int, *, verify: bool = True, paced: bool = True
     ) -> StatusMessage | None:
         """Set the scene of a room; returns the bridge's echo.
 
@@ -635,57 +700,84 @@ class Bridge:
            Since 0.5.0 this raises :class:`RakoCommandError` if a listener is
            attached and the bridge never confirms the change.  Update your
            state from the returned message rather than optimistically.
+
+           Since 0.6.0 the command is paced and may be superseded by a newer
+           command for the same target, whose echo is then returned; see
+           :meth:`send_command`.
         """
-        return await self.send_command(scene_command(room_id, scene), verify=verify)
+        return await self.send_command(scene_command(room_id, scene), verify=verify, paced=paced)
 
     async def set_room_level(
-        self, room_id: int, level: int, *, verify: bool = True
+        self, room_id: int, level: int, *, verify: bool = True, paced: bool = True
     ) -> StatusMessage | None:
         """Set the level of every channel in a room (channel 0)."""
-        return await self.set_channel_level(room_id, 0, level, verify=verify)
+        return await self.set_channel_level(room_id, 0, level, verify=verify, paced=paced)
 
     async def set_channel_level(
-        self, room_id: int, channel_id: int, level: int, *, verify: bool = True
+        self, room_id: int, channel_id: int, level: int, *, verify: bool = True, paced: bool = True
     ) -> StatusMessage | None:
-        """Set the level of a single channel; returns the bridge's echo."""
-        return await self.send_command(level_command(room_id, channel_id, level), verify=verify)
+        """Set the level of a single channel; returns the bridge's echo.
+
+        Rapid repeats -- a slider drag -- coalesce into one send of the last
+        level, and every caller gets that send's echo.
+        """
+        return await self.send_command(
+            level_command(room_id, channel_id, level), verify=verify, paced=paced
+        )
 
     async def fade_up(
-        self, room_id: int, channel_id: int = 0, *, verify: bool = True
+        self, room_id: int, channel_id: int = 0, *, verify: bool = True, paced: bool = True
     ) -> StatusMessage | None:
         """Start fading up, exactly as holding a keypad's up button does.
 
         Must be terminated with :meth:`stop_fade`.  No level is broadcast when
         the fade stops, so the resulting level is genuinely unknown.
+
+        A fade and its stop are separate queue entries for the same target, so
+        the stop cannot overtake the fade -- but note that submitting both back
+        to back means the fade runs for at least
+        :attr:`min_command_interval` before the stop goes out.
         """
         return await self.send_command(
             fade_command(room_id, channel_id, direction=FadeDirection.UP),
             verify=verify,
+            paced=paced,
         )
 
     async def fade_down(
-        self, room_id: int, channel_id: int = 0, *, verify: bool = True
+        self, room_id: int, channel_id: int = 0, *, verify: bool = True, paced: bool = True
     ) -> StatusMessage | None:
         """Start fading down; must be terminated with :meth:`stop_fade`."""
         return await self.send_command(
             fade_command(room_id, channel_id, direction=FadeDirection.DOWN),
             verify=verify,
+            paced=paced,
         )
 
     async def stop_fade(
-        self, room_id: int, channel_id: int = 0, *, verify: bool = True
+        self, room_id: int, channel_id: int = 0, *, verify: bool = True, paced: bool = True
     ) -> StatusMessage | None:
         """Stop a running fade."""
-        return await self.send_command(stop_command(room_id, channel_id), verify=verify)
+        return await self.send_command(
+            stop_command(room_id, channel_id), verify=verify, paced=paced
+        )
 
     async def set_room_brightness(
-        self, room_id: int, brightness: int, *, verify: bool = True
+        self, room_id: int, brightness: int, *, verify: bool = True, paced: bool = True
     ) -> StatusMessage | None:
         """Deprecated alias for :meth:`set_room_level`."""
-        return await self.set_room_level(room_id, brightness, verify=verify)
+        return await self.set_room_level(room_id, brightness, verify=verify, paced=paced)
 
     async def set_channel_brightness(
-        self, room_id: int, channel_id: int, brightness: int, *, verify: bool = True
+        self,
+        room_id: int,
+        channel_id: int,
+        brightness: int,
+        *,
+        verify: bool = True,
+        paced: bool = True,
     ) -> StatusMessage | None:
         """Deprecated alias for :meth:`set_channel_level`."""
-        return await self.set_channel_level(room_id, channel_id, brightness, verify=verify)
+        return await self.set_channel_level(
+            room_id, channel_id, brightness, verify=verify, paced=paced
+        )

@@ -68,13 +68,24 @@ def test_deserialise_status_message(in_bytes, exp_obj):
 @pytest.mark.parametrize(
     "in_bytes,exp_obj",
     [
-        ([83, 6, 0, 10, 0, 50, 128, 68], UnsupportedMessage()),
         ([1, 2, 3, 4], UnsupportedMessage()),
     ],
 )
 def test_deserialise_unsupported_message(in_bytes, exp_obj):
     payload_result = deserialise_byte_list(in_bytes)
     assert payload_result == exp_obj
+
+
+def test_fade_is_no_longer_unsupported():
+    """FADE (0x32) used to be dropped; the full decoder now models it.
+
+    See python_rako.protocol for the exhaustive decoder tests.
+    """
+    from python_rako.protocol import FadeMessage
+
+    payload_result = deserialise_byte_list([83, 6, 0, 10, 0, 50, 128, 68])
+    assert isinstance(payload_result, FadeMessage)
+    assert payload_result.room == 10
 
 
 def test_deserialise_scene_cache_message():

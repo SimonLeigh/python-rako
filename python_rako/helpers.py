@@ -13,23 +13,27 @@ if TYPE_CHECKING:
     from asyncio_dgram.aio import DatagramClient, DatagramServer
 
 from python_rako.const import (
-    SCENE_COMMAND_TO_NUMBER,
-    CommandType,
     DataRecordType,
     MessageType,
     sentinel,
 )
 from python_rako.model import (
-    ChannelStatusMessage,
     CommandUDP,
     EOFResponse,
     LevelCache,
     LevelCacheItem,
     RoomChannel,
     SceneCache,
-    SceneStatusMessage,
     StatusMessage,
     UnsupportedMessage,
+)
+
+# ``calc_crc`` is re-exported for backwards compatibility; it now lives in
+# ``protocol`` alongside the rest of the framing logic.
+from python_rako.protocol import (  # noqa: F401
+    calc_crc,
+    decode_status_message,
+    encode_command,
 )
 
 _LOGGER = logging.getLogger(__name__)
@@ -97,26 +101,13 @@ def deserialise_byte_list(
 
 
 def deserialise_status_message(byte_list: list[int]) -> StatusMessage:
-    data_length = byte_list[1] - 5
-    room = byte_list[2] * 256 + byte_list[3]
-    channel = byte_list[4]
-    command = CommandType(byte_list[5])
-    data = byte_list[6 : 6 + data_length]
-    if command in (CommandType.LEVEL_SET_LEGACY, CommandType.SET_LEVEL):
-        return ChannelStatusMessage(
-            room=room,
-            channel=channel,
-            brightness=data[1],
-        )
+    """Decode a status broadcast.
 
-    # command is one of SET_SCENE or SC1_LEGACY, SC2_LEGACY, SC3_LEGACY, SC4_LEGACY
-    scene = data[1] if command == CommandType.SET_SCENE else SCENE_COMMAND_TO_NUMBER[command]
-
-    return SceneStatusMessage(
-        room=room,
-        channel=channel,
-        scene=scene,
-    )
+    Thin wrapper kept for backwards compatibility; the real work lives in
+    :mod:`python_rako.protocol`, which understands every instruction the bridge
+    emits and returns ``UnknownStatusMessage`` rather than raising.
+    """
+    return decode_status_message(byte_list)
 
 
 def deserialise_level_cache_message(byte_list: list[int]) -> LevelCache:
@@ -152,27 +143,15 @@ def deserialise_scene_cache_message(byte_list: list[int]) -> SceneCache:
     return scene_cache
 
 
-def calc_crc(byte_list: list[int]) -> int:
-    return 256 - sum(byte_list) % 256
-
-
 def command_to_byte_list(command: CommandUDP) -> list[int]:
-    checksum_list: list[int] = [
-        5 + len(command.data),  # following bytes
-        int(command.room / 256),  # high room number
-        command.room % 256,  # low room number
-        command.channel,  # channel
-        command.command.value,  # command
-        *command.data,
-    ]
-
-    byte_list: list[int] = [
-        command.message_type.value,
-        *checksum_list,
-        calc_crc(checksum_list),
-    ]
-
-    return byte_list
+    """Serialise a :class:`CommandUDP`; delegates to :func:`protocol.encode_command`."""
+    return encode_command(
+        command.room,
+        command.channel,
+        command.command,
+        command.data,
+        message_type=command.message_type,
+    )
 
 
 _scene_brightness = {

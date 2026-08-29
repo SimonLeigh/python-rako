@@ -37,6 +37,7 @@ from python_rako.exceptions import (  # noqa
     RakoConnectionError,
     RakoDiscoveryError,
     RakoProtocolError,
+    RakoQueueClosedError,
     RakoUnsupportedCommandError,
 )
 from python_rako.listener import ListenerHealth, StatusListener  # noqa
@@ -77,6 +78,11 @@ from python_rako.protocol import (  # noqa
     decode_status_message,
     encode_command,
     validate_crc,
+)
+from python_rako.queue import (  # noqa
+    DEFAULT_MIN_COMMAND_INTERVAL,
+    CommandQueue,
+    CommandQueueStats,
 )
 from python_rako.state import (  # noqa
     BridgeStateSnapshot,

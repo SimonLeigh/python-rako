@@ -14,6 +14,16 @@ class RakoCommandError(RakoBridgeError):
     pass
 
 
+class RakoQueueClosedError(RakoCommandError):
+    """Raised for commands a closed queue will never send.
+
+    A :class:`RakoCommandError` because the outcome is the same from the
+    caller's point of view -- the command did not happen -- but distinguishable
+    for a consumer that wants to stay quiet about commands lost to its own
+    shutdown.
+    """
+
+
 class RakoDiscoveryError(RakoBridgeError):
     """Raised when bridge discovery fails or times out."""
 

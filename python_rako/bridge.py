@@ -733,10 +733,12 @@ class Bridge:
         Must be terminated with :meth:`stop_fade`.  No level is broadcast when
         the fade stops, so the resulting level is genuinely unknown.
 
-        A fade and its stop are separate queue entries for the same target, so
-        the stop cannot overtake the fade -- but note that submitting both back
-        to back means the fade runs for at least
-        :attr:`min_command_interval` before the stop goes out.
+        The fade is paced like any other command, but its :meth:`stop_fade` is
+        not: a release for the target of the fade just sent skips the queue and
+        the interval, so a 200 ms tap stays a 200 ms tap instead of being
+        stretched to :attr:`min_command_interval`.  Neither half of the pair
+        can be coalesced away by the other.  Pacing for whatever follows is
+        measured from the stop.
         """
         return await self.send_command(
             fade_command(room_id, channel_id, direction=FadeDirection.UP),
@@ -757,7 +759,13 @@ class Bridge:
     async def stop_fade(
         self, room_id: int, channel_id: int = 0, *, verify: bool = True, paced: bool = True
     ) -> StatusMessage | None:
-        """Stop a running fade."""
+        """Stop a running fade.
+
+        A stop for the target of the fade most recently sent is dispatched as
+        soon as the queue is free, ahead of anything else waiting and without
+        waiting out :attr:`min_command_interval`: it is the release half of a
+        gesture, and delaying it changes what the user asked for.
+        """
         return await self.send_command(
             stop_command(room_id, channel_id), verify=verify, paced=paced
         )

@@ -28,6 +28,28 @@ verification (:mod:`python_rako.commands`) takes 150-300 ms on a good day and
 up to two verify windows on a bad one, and overlapping that with the next send
 is exactly the pattern that lost a command in Phase 0.
 
+The release exemption
+---------------------
+A fade is a *gesture*, not a value: FADE_UP/FADE_DOWN is the button press and
+STOP is the release, and the release is what decides how far the circuit got.
+Pacing the release would rewrite the user's intent -- a 200 ms tap on a dimmer
+would become a 1.5 s sweep -- so a STOP for the target of the most recently
+sent fade is dispatched as soon as the worker is free, ignoring the interval,
+and ahead of anything else queued.  Everything else about it is normal: it
+still waits for the fade's own verification (one command in flight at a time),
+and the *next* command is paced from the moment the STOP was sent.
+
+Two coalescing rules protect the pair, because losing either half of a gesture
+leaves a fade running or never starts one:
+
+* a pending STOP is never replaced by a later command -- the release must
+  reach the bridge;
+* a STOP never replaces a pending fade for the same target -- otherwise a
+  press/release submitted while the queue is busy would collapse into a stop
+  for a fade that never ran.
+
+The fade itself is paced like anything else.
+
 The superseded contract
 -----------------------
 Callers await a result, so a coalesced-away request has to resolve somehow.  It
@@ -54,6 +76,7 @@ from collections import deque
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
+from python_rako.const import CommandType
 from python_rako.exceptions import RakoQueueClosedError
 
 if TYPE_CHECKING:
@@ -86,6 +109,11 @@ type CommandRunner = Callable[..., Awaitable[StatusMessage | None]]
 
 #: A command's target. Everything queued for the same target coalesces.
 type TargetKey = tuple[int, int]
+
+#: The press half of a fade gesture. STOP is the release (see the module
+#: docstring): FADE_UP/FADE_DOWN are the keypad-style press/release pair, and
+#: FADE (0x32) is the parameterised form, which STOP also terminates.
+_FADE_COMMANDS = frozenset({CommandType.FADE_UP, CommandType.FADE_DOWN, CommandType.FADE})
 
 
 @dataclass(frozen=True)
@@ -177,6 +205,8 @@ class CommandQueue:
         # -inf so the first command goes out immediately.
         self._last_send_started = float("-inf")
         self._last_completed = float("-inf")
+        #: Target of the most recently sent fade, whose release skips pacing.
+        self._fade_target: TargetKey | None = None
         self._sent = 0
         self._coalesced = 0
         self._failed = 0
@@ -284,7 +314,7 @@ class CommandQueue:
         future: asyncio.Future[StatusMessage | None] = loop.create_future()
         key: TargetKey = (spec.room, spec.channel)
 
-        existing = self._find_pending(key)
+        existing = self._find_coalescible(key, spec)
         if existing is not None:
             # Keep the position, take the new payload: the bridge only honours
             # the last command to a target, so sending the earlier one would
@@ -317,10 +347,22 @@ class CommandQueue:
         self._wakeup.set()
         return future
 
-    def _find_pending(self, key: TargetKey) -> _QueueEntry | None:
+    def _find_coalescible(self, key: TargetKey, spec: CommandSpec) -> _QueueEntry | None:
+        """The waiting entry ``spec`` should replace, if any.
+
+        Everything for one target coalesces except the two halves of a fade
+        gesture: a queued release is never replaced, and a release never
+        replaces a queued press.  Either would drop half of a press/release
+        pair, leaving a fade running or never starting one.
+        """
         for entry in self._pending:
-            if entry.key == key:
-                return entry
+            if entry.key != key:
+                continue
+            if entry.spec.command is CommandType.STOP_FADING:
+                return None
+            if spec.command is CommandType.STOP_FADING and entry.spec.command in _FADE_COMMANDS:
+                return None
+            return entry
         return None
 
     def _discard_if_abandoned(self, entry: _QueueEntry) -> None:
@@ -404,6 +446,16 @@ class CommandQueue:
                 await self._wakeup.wait()
                 continue
 
+            release = self._pop_pending_release()
+            if release is not None:
+                # The release of a fade that is already running: pacing it
+                # would lengthen the fade the user asked for. It still waits
+                # for the press's own verification, because _run is
+                # sequential, and it re-anchors pacing for what follows.
+                _LOGGER.debug("Dispatching %s ahead of pacing", release.spec)
+                await self._run(release, loop)
+                continue
+
             entry = self._pending[0]
             if not entry.live_waiters:
                 # Everyone who wanted this gave up while it waited.
@@ -422,6 +474,27 @@ class CommandQueue:
             self._pending.popleft()
             await self._run(entry, loop)
 
+    def _pop_pending_release(self) -> _QueueEntry | None:
+        """Take the release of the fade that is currently running, if queued.
+
+        Scans the whole queue rather than just its head: a release held behind
+        another target's command would be delayed by a full interval, which is
+        the delay this rule exists to remove.  It is the one departure from
+        FIFO, and it can happen at most once per fade because
+        :attr:`_fade_target` is cleared by the next send.
+        """
+        if self._fade_target is None:
+            return None
+        for index, entry in enumerate(self._pending):
+            if (
+                entry.key == self._fade_target
+                and entry.spec.command is CommandType.STOP_FADING
+                and entry.live_waiters
+            ):
+                del self._pending[index]
+                return entry
+        return None
+
     async def _run(self, entry: _QueueEntry, loop: asyncio.AbstractEventLoop) -> None:
         """Send one command and hand its outcome to everyone waiting on it.
 
@@ -431,6 +504,10 @@ class CommandQueue:
         self._in_flight = entry
         self._idle.clear()
         self._last_send_started = loop.time()
+        # A fade arms the release exemption for its target; anything else
+        # sent -- including the release itself -- disarms it, so exactly one
+        # STOP per fade skips the queue.
+        self._fade_target = entry.key if entry.spec.command in _FADE_COMMANDS else None
         try:
             result = await self._runner(entry.spec, **entry.options)
         except asyncio.CancelledError:

@@ -42,8 +42,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   via `bridge.command_queue.stats` (depth, oldest age, sent/coalesced/failed),
   `drain()` for orderly shutdown, `paced=False` on `send_command`/`set_*` as a
   direct escape hatch, and a runtime-settable `bridge.min_command_interval`.
-  New exception `RakoQueueClosedError` (a `RakoCommandError`) for commands a
-  closed queue will never send.
+  A fade and its stop are treated as one gesture: the stop for the target of
+  the fade just sent skips the queue and the interval (so a short tap stays
+  short), neither half can coalesce the other away, and pacing resumes from the
+  stop. New exception `RakoQueueClosedError` (a `RakoCommandError`) for
+  commands a closed queue will never send.
 - `scripts/measure_interval.py`: live tool that finds the bridge's real minimum
   safe interval by sending echo-verified off/on pairs at decreasing intervals,
   and recommends a `min_interval` from the result.

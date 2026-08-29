@@ -14,11 +14,18 @@ import contextlib
 import pytest
 
 from python_rako.bridge import Bridge
-from python_rako.commands import CommandSpec, level_command, scene_command, stop_command
-from python_rako.const import CommandType
+from python_rako.commands import (
+    CommandSpec,
+    fade_command,
+    level_command,
+    scene_command,
+    stop_command,
+)
+from python_rako.const import CommandType, FadeDirection
 from python_rako.exceptions import RakoCommandError, RakoQueueClosedError
 from python_rako.model import ChannelStatusMessage, SceneStatusMessage, StatusMessage
 from python_rako.pacing import DEFAULT_MIN_COMMAND_INTERVAL, CommandQueue
+from python_rako.protocol import FadeMessage, StopFadeMessage
 
 #: Short enough to keep the suite fast, long enough that a send that ignored
 #: pacing would land inside the same event-loop tick and be caught.
@@ -67,6 +74,10 @@ class RecordingRunner:
 
 
 def _echo_for(spec: CommandSpec) -> StatusMessage:
+    if spec.command is CommandType.STOP_FADING:
+        return StopFadeMessage(spec.room, spec.channel)
+    if spec.expected_direction is not None:
+        return FadeMessage(spec.room, spec.channel, spec.expected_direction)
     if spec.expected_level is not None:
         return ChannelStatusMessage(spec.room, spec.channel, spec.expected_level)
     return SceneStatusMessage(spec.room, spec.channel, spec.expected_scene or 0)
@@ -181,8 +192,12 @@ async def test_different_kinds_of_command_coalesce_on_the_same_target(queue, run
     ]
 
 
-async def test_a_stop_coalesces_over_a_pending_fade(queue, runner):
-    """Latest wins even when the two commands mean opposite things."""
+async def test_a_stop_coalesces_over_a_pending_level(queue, runner):
+    """Latest wins even when the two commands mean opposite things.
+
+    A pending *fade* is the one thing a stop will not replace -- see the
+    release tests below.
+    """
     blocker = queue.enqueue(level_command(9, 9, 1))
     queue.enqueue(level_command(4, 1, 200))
     stop = queue.enqueue(stop_command(4, 1))
@@ -208,6 +223,125 @@ async def test_an_in_flight_command_is_not_coalesced_into(queue, runner):
     assert await first == ChannelStatusMessage(7, 2, 10)
     assert await second == ChannelStatusMessage(7, 2, 20)
     assert runner.levels == [10, 20]
+
+
+# ---------------------------------------------------------------------------
+# The release exemption: a fade gesture is press + release
+# ---------------------------------------------------------------------------
+
+
+async def test_a_release_is_not_held_back_by_pacing(runner):
+    """A 200 ms tap on a dimmer must not become a 1.5 s sweep."""
+    queue = CommandQueue(runner, min_interval=5.0, name="test")
+    try:
+        press = await queue.submit(fade_command(7, 2, direction=FadeDirection.UP))
+        await asyncio.sleep(0.05)  # the user holds the button briefly
+        release = await asyncio.wait_for(queue.submit(stop_command(7, 2)), timeout=1.0)
+
+        assert press == FadeMessage(7, 2, FadeDirection.UP)
+        assert release == StopFadeMessage(7, 2)
+        # The fade lasted about as long as the press, not about as long as the
+        # pacing interval.
+        assert runner.gaps[0] < 1.0
+    finally:
+        await queue.close()
+
+
+async def test_the_command_after_a_release_is_paced_from_the_release(queue, runner):
+    """Normal pacing resumes, measured from the stop rather than the fade."""
+    await queue.submit(fade_command(7, 2, direction=FadeDirection.UP))
+    await queue.submit(stop_command(7, 2))
+    await queue.submit(level_command(7, 2, 128))
+
+    assert [spec.command for spec in runner.calls] == [
+        CommandType.FADE_UP,
+        CommandType.STOP_FADING,
+        CommandType.SET_LEVEL,
+    ]
+    assert runner.started_at[2] - runner.started_at[1] >= INTERVAL * 0.95
+
+
+async def test_only_one_release_per_fade_skips_the_queue(queue, runner):
+    """The exemption is armed by a fade and spent by the release."""
+    await queue.submit(fade_command(7, 2, direction=FadeDirection.UP))
+    await queue.submit(stop_command(7, 2))
+    await queue.submit(stop_command(7, 2))
+    # The second stop has no fade to release, so it waits its turn.
+    assert runner.gaps[1] >= INTERVAL * 0.95
+
+
+async def test_a_release_overtakes_another_target_waiting_on_pacing(queue, runner):
+    """Held behind an unrelated command, a release would miss its moment."""
+    await queue.submit(fade_command(7, 2, direction=FadeDirection.UP))
+    other = queue.enqueue(level_command(3, 1, 40))
+    release = queue.enqueue(stop_command(7, 2))
+
+    await release
+    assert [spec.command for spec in runner.calls] == [
+        CommandType.FADE_UP,
+        CommandType.STOP_FADING,
+    ]
+    await other
+    assert runner.calls[2].command is CommandType.SET_LEVEL
+
+
+async def test_a_level_between_a_fade_and_its_stop_does_not_swallow_the_stop(queue, runner):
+    """The level is the obsolete one here; the release still reaches the bridge."""
+    await queue.submit(fade_command(7, 2, direction=FadeDirection.UP))
+    level = queue.enqueue(level_command(7, 2, 128))
+    release = queue.enqueue(stop_command(7, 2))
+
+    assert await release == StopFadeMessage(7, 2)
+    assert [spec.command for spec in runner.calls] == [
+        CommandType.FADE_UP,
+        CommandType.STOP_FADING,
+    ]
+    # The superseded level is answered with what actually happened.
+    assert await level == StopFadeMessage(7, 2)
+
+
+async def test_a_later_command_never_coalesces_over_a_queued_release(queue, runner):
+    """The release must reach the bridge even if a level follows it."""
+    await queue.submit(fade_command(7, 2, direction=FadeDirection.UP))
+    release = queue.enqueue(stop_command(7, 2))
+    level = queue.enqueue(level_command(7, 2, 128))
+
+    assert await release == StopFadeMessage(7, 2)
+    assert await level == ChannelStatusMessage(7, 2, 128)
+    assert [spec.command for spec in runner.calls] == [
+        CommandType.FADE_UP,
+        CommandType.STOP_FADING,
+        CommandType.SET_LEVEL,
+    ]
+
+
+async def test_a_stop_does_not_replace_a_queued_fade(queue, runner):
+    """A press/release pair submitted while the queue is busy keeps both halves.
+
+    Coalescing the stop over the fade would leave the gesture as a stop for a
+    fade that never ran -- the lights would simply not move.
+    """
+    blocker = queue.enqueue(level_command(9, 9, 1))
+    press = queue.enqueue(fade_command(7, 2, direction=FadeDirection.DOWN))
+    release = queue.enqueue(stop_command(7, 2))
+
+    await blocker
+    assert await press == FadeMessage(7, 2, FadeDirection.DOWN)
+    assert await release == StopFadeMessage(7, 2)
+    assert [spec.command for spec in runner.calls] == [
+        CommandType.SET_LEVEL,
+        CommandType.FADE_DOWN,
+        CommandType.STOP_FADING,
+    ]
+    # The release still skipped the interval once the press was on the wire.
+    assert runner.gaps[1] < INTERVAL * 0.9
+
+
+async def test_a_stop_for_another_target_is_paced_normally(queue, runner):
+    """Only the fade's own target is exempt."""
+    await queue.submit(fade_command(7, 2, direction=FadeDirection.UP))
+    await queue.submit(stop_command(3, 1))
+    assert runner.gaps[0] >= INTERVAL * 0.95
 
 
 # ---------------------------------------------------------------------------
@@ -481,6 +615,25 @@ async def test_bridge_paces_and_coalesces_its_set_calls(monkeypatch):
         assert runner.levels == [1, 11]
         assert results == [ChannelStatusMessage(7, 2, 11)] * 10
         assert bridge.command_queue.stats.coalesced == 9
+    finally:
+        await bridge.close()
+
+
+async def test_bridge_fade_and_stop_are_not_floored_by_the_interval(monkeypatch):
+    """The gesture the user made is the gesture the bridge gets."""
+    bridge = Bridge("192.0.2.10", 9761, "bridge", "mac", min_command_interval=5.0)
+    runner = RecordingRunner()
+    monkeypatch.setattr(bridge, "_execute", runner)
+    monkeypatch.setattr(bridge._command_queue, "_runner", runner)
+    try:
+        await bridge.fade_up(7, 2)
+        await asyncio.sleep(0.05)
+        await asyncio.wait_for(bridge.stop_fade(7, 2), timeout=1.0)
+        assert [spec.command for spec in runner.calls] == [
+            CommandType.FADE_UP,
+            CommandType.STOP_FADING,
+        ]
+        assert runner.gaps[0] < 1.0
     finally:
         await bridge.close()
 

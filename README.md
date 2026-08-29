@@ -133,6 +133,14 @@ echo-or-failure)`, so a slow verification is never overlapped with the next
 command. A failing command's exception goes to its own caller and the queue
 carries on.
 
+**Fades are the exception.** A fade is a gesture, not a value: `fade_up()` is
+the press and `stop_fade()` is the release, and the release decides how far the
+circuit got. Pacing it would turn a 200 ms tap into a 1.5 s sweep, so a stop
+for the target of the fade just sent is dispatched as soon as the queue is
+free, ahead of anything else waiting and without waiting out the interval. The
+press itself is paced as usual, neither half of the pair can be coalesced away
+by the other, and the next command is paced from the stop.
+
 ```python
 stats = bridge.command_queue.stats
 # depth, oldest_age, in_flight, sent, coalesced, failed, min_interval

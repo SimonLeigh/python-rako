@@ -594,7 +594,7 @@ async def test_bridge_defaults_to_the_documented_interval():
     bridge = Bridge("192.0.2.10", 9761, "bridge", "mac")
     try:
         assert bridge.min_command_interval == DEFAULT_MIN_COMMAND_INTERVAL
-        assert DEFAULT_MIN_COMMAND_INTERVAL == 1.5
+        assert DEFAULT_MIN_COMMAND_INTERVAL == 1.25
     finally:
         await bridge.close()
 

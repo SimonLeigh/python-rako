@@ -155,10 +155,12 @@ await bridge.send_command(spec, paced=False)  # tooling escape hatch
 queue that will never run again. Call `drain()` first if you want queued
 commands to land.
 
-The 1.5 s default is **assumed, not measured** — it is the echo-verify window,
-known to be safe. [`scripts/measure_interval.py`](scripts/measure_interval.py)
-finds the real floor against a live bridge by sending off/on pairs at
-decreasing intervals until an echo goes missing:
+The 1.25 s default is **measured** (2026-08-30, on a live WTC bridge): 1.0 s
+spacing was loss-free across all trials, 0.75 s silently dropped a command, and
+the default is the fastest clean interval with a 1.25x margin.
+[`scripts/measure_interval.py`](scripts/measure_interval.py) re-measures
+against any bridge by sending off/on pairs at decreasing intervals until an
+echo goes missing:
 
 ```console
 $ RAKO_BRIDGE_HOST=192.0.2.10 python scripts/measure_interval.py \

@@ -33,6 +33,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - `Bridge` is now an async context manager; `Bridge.close()` releases sockets.
 - `discover_bridge(timeout=5.0)`; new exceptions `RakoDiscoveryError`,
   `RakoUnsupportedCommandError`, `RakoProtocolError`.
+- `tests_integration/` rewritten on the new state/listener/echo-verify API,
+  gated behind `RAKO_LIVE=1` (mutating tests additionally behind
+  `RAKO_LIVE_MUTATE=1` and an operator-chosen `RAKO_TEST_ROOM`/
+  `RAKO_TEST_CHANNEL`) and the `live` pytest marker, so a plain `pytest` run
+  never collects them; `tests/test_state.py` gained a full-pipeline regression
+  test replaying every Phase-0 capture through `decode_packet` and
+  `BridgeStateSnapshot.apply`. New characterisation tools under `scripts/`
+  (`listen.py`, `snapshot.py`, `latency.py`) mirror the Phase 0 tooling
+  against the new API for exploring a live bridge by hand.
 
 ### Changed
 

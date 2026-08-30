@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.5.0] - 2026-08-30
+
 ### Added
 
 - Full UDP status decoder (`python_rako.protocol`): every documented instruction
@@ -32,8 +36,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`scenes.htm`) so polling never contends with the UDP listener socket.
 - **Command pacing** (`python_rako.pacing.CommandQueue`): every command now goes
   through a per-bridge FIFO queue that sends no faster than
-  `min_command_interval` (default `DEFAULT_MIN_COMMAND_INTERVAL` = 1.5 s,
-  measured on a live bridge: 1.25 s (1.0 s was loss-free, 0.75 s dropped a command)) and never overlaps a command still waiting
+  `min_command_interval` (default `DEFAULT_MIN_COMMAND_INTERVAL` = 1.25 s —
+  measured on a live bridge: 1.0 s spacing was loss-free, 0.75 s silently
+  dropped a command; default = fastest clean interval x 1.25 margin) and never
+  overlaps a command still waiting
   for its echo. Requests that arrive too fast are queued, never dropped — the
   bridge silently ignores commands sent too close together. Commands for the
   same `(room, channel)` coalesce: a newer one replaces a waiting one in place,
@@ -104,7 +110,8 @@ e.g.:
 - ...
 -->
 
-[Unreleased]: https://github.com/SimonLeigh/python-rako/commits/master
+[Unreleased]: https://github.com/SimonLeigh/python-rako/compare/v0.5.0...master
+[0.5.0]: https://github.com/SimonLeigh/python-rako/releases/tag/v0.5.0
 
 <!--
 Note for the first tagged release under this process: no git tags exist in

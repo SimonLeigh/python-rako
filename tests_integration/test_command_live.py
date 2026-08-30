@@ -66,12 +66,15 @@ async def test_command_echo_latency(
 
     # Alternate two levels distinct from `previous_level` so every command in
     # the sample actually changes the channel and produces a fresh echo.
+    # `paced=False`: measure the raw send->echo path. Through the paced queue
+    # (the default) the awaited time would include the queue's min_interval
+    # spacing between consecutive commands, not just the bridge's echo time.
     levels = [255, 128] if previous_level != 255 else [128, 64]
     latencies: list[float] = []
     try:
         for level in levels:
             start = time.monotonic()
-            echo = await verified_bridge.set_channel_level(room, channel, level)
+            echo = await verified_bridge.set_channel_level(room, channel, level, paced=False)
             latencies.append(time.monotonic() - start)
             assert isinstance(echo, ChannelStatusMessage)
             assert echo.brightness == level

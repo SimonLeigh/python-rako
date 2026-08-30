@@ -104,11 +104,11 @@ A Rako bridge silently drops commands that arrive too close together — it
 accepts the frame, never acts on it, and says nothing. Home Assistant will
 happily issue twenty level changes while a slider is dragged, so every command
 goes through a per-bridge queue that sends no faster than
-`min_command_interval` (default `1.5` s) and never more than one verified
+`min_command_interval` (default `1.25` s, measured on a live bridge: 1.0 s spacing was loss-free, 0.75 s dropped a command) and never more than one verified
 command at a time.
 
 ```python
-bridge = Bridge(host, 9761, name, mac, listener=listener, min_command_interval=1.5)
+bridge = Bridge(host, 9761, name, mac, listener=listener, min_command_interval=1.25)
 
 # Twenty rapid levels for one channel; the queue sends the first, then one
 # more carrying the final level. Nothing is dropped, nothing is sent too fast.
@@ -155,10 +155,12 @@ await bridge.send_command(spec, paced=False)  # tooling escape hatch
 queue that will never run again. Call `drain()` first if you want queued
 commands to land.
 
-The 1.5 s default is **assumed, not measured** — it is the echo-verify window,
-known to be safe. [`scripts/measure_interval.py`](scripts/measure_interval.py)
-finds the real floor against a live bridge by sending off/on pairs at
-decreasing intervals until an echo goes missing:
+The 1.25 s default is **measured** (2026-08-30, on a live WTC bridge): 1.0 s
+spacing was loss-free across all trials, 0.75 s silently dropped a command, and
+the default is the fastest clean interval with a 1.25x margin.
+[`scripts/measure_interval.py`](scripts/measure_interval.py) re-measures
+against any bridge by sending off/on pairs at decreasing intervals until an
+echo goes missing:
 
 ```console
 $ RAKO_BRIDGE_HOST=192.0.2.10 python scripts/measure_interval.py \

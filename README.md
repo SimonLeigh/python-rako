@@ -104,11 +104,11 @@ A Rako bridge silently drops commands that arrive too close together — it
 accepts the frame, never acts on it, and says nothing. Home Assistant will
 happily issue twenty level changes while a slider is dragged, so every command
 goes through a per-bridge queue that sends no faster than
-`min_command_interval` (default `1.5` s) and never more than one verified
+`min_command_interval` (default `1.25` s, measured on a live bridge: 1.0 s spacing was loss-free, 0.75 s dropped a command) and never more than one verified
 command at a time.
 
 ```python
-bridge = Bridge(host, 9761, name, mac, listener=listener, min_command_interval=1.5)
+bridge = Bridge(host, 9761, name, mac, listener=listener, min_command_interval=1.25)
 
 # Twenty rapid levels for one channel; the queue sends the first, then one
 # more carrying the final level. Nothing is dropped, nothing is sent too fast.

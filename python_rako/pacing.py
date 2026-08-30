@@ -61,10 +61,10 @@ overtaken before it left the queue and never a silent ``None``.
 
 Pacing default
 --------------
-:data:`DEFAULT_MIN_COMMAND_INTERVAL` is 1.5 s, *assumed pending live
-measurement*: it is the verify window from ``BRIDGE_BEHAVIOUR.md`` fact 14,
-which is known to be safe, not a measured minimum.  ``scripts/measure_interval.py``
-finds the real floor against a live bridge; lower the interval once it has.
+:data:`DEFAULT_MIN_COMMAND_INTERVAL` is 1.25 s, **measured** on a live bridge
+(2026-08-30, ``scripts/measure_interval.py``): 1.0 s spacing was loss-free over
+all trials while 0.75 s dropped a command, so the default is the fastest clean
+interval with a 1.25x margin.  Re-run the script to re-measure on other bridges.
 """
 
 from __future__ import annotations
@@ -95,12 +95,11 @@ __all__ = [
 
 #: Minimum seconds between consecutive sends to one bridge.
 #:
-#: **Assumed pending live measurement.**  1.5 s is the echo-verify window (see
-#: ``BRIDGE_BEHAVIOUR.md`` fact 14: echo in 144-306 ms, ack in 677-770 ms), so
-#: it is comfortably above anything the bridge has been seen to need -- but the
-#: true minimum safe spacing has not been measured yet.  Run
-#: ``scripts/measure_interval.py`` against a live bridge to find it.
-DEFAULT_MIN_COMMAND_INTERVAL = 1.5
+#: **Measured** (2026-08-30, ``scripts/measure_interval.py`` on a live WTC
+#: bridge): 1.0 s spacing was loss-free, 0.75 s silently dropped a command.
+#: Default = fastest clean interval x 1.25 margin.  Re-run the script to
+#: re-measure; see also ``BRIDGE_BEHAVIOUR.md``.
+DEFAULT_MIN_COMMAND_INTERVAL = 1.25
 
 #: Runs one command and returns the bridge's echo (or ``None`` if unverified).
 #: Deliberately ``...``-typed: the queue passes each request's options straight

@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.5.0] - 2026-08-30
+
 ### Added
 
 - Full UDP status decoder (`python_rako.protocol`): every documented instruction
@@ -104,7 +108,8 @@ e.g.:
 - ...
 -->
 
-[Unreleased]: https://github.com/SimonLeigh/python-rako/commits/master
+[Unreleased]: https://github.com/SimonLeigh/python-rako/compare/v0.5.0...master
+[0.5.0]: https://github.com/SimonLeigh/python-rako/releases/tag/v0.5.0
 
 <!--
 Note for the first tagged release under this process: no git tags exist in

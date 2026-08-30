@@ -1,15 +1,12 @@
 # Python: Rako Controls API Client
 
-[![GitHub Release][releases-shield]][releases]
+[![PyPI Release][releases-shield]][releases]
 ![Project Stage][project-stage-shield]
 ![Project Maintenance][maintenance-shield]
 [![License][license-shield]](LICENSE)
 
 [![Build Status][build-shield]][build]
 [![Code Coverage][codecov-shield]][codecov]
-[![Code Quality][code-quality-shield]][code-quality]
-
-[![Buy me a coffee][buymeacoffee-shield]][buymeacoffee]
 
 Asynchronous Python client for Rako Controls.
 
@@ -22,7 +19,7 @@ their behavior.
 ## Installation
 
 ```bash
-pip install python-rako
+pip install python-rako-2025
 ```
 
 ## Usage
@@ -276,23 +273,16 @@ check [the contributor's page][contributors].
 
 [License](LICENSE)
 
-[build-shield]: https://github.com/marengaz/python-rako/workflows/Continuous%20Integration/badge.svg
-[build]: https://github.com/marengaz/python-rako/actions
-[code-quality-shield]: https://img.shields.io/lgtm/grade/python/g/marengaz/python-rako.svg?logo=lgtm&logoWidth=18
-[code-quality]: https://lgtm.com/projects/g/marengaz/python-rako/context:python
-[codecov-shield]: https://codecov.io/gh/marengaz/python-rako/branch/master/graph/badge.svg
-[codecov]: https://codecov.io/gh/marengaz/python-rako
-[contributors]: https://github.com/marengaz/python-rako/graphs/contributors
+[build-shield]: https://github.com/SimonLeigh/python-rako/actions/workflows/ci.yml/badge.svg
+[build]: https://github.com/SimonLeigh/python-rako/actions/workflows/ci.yml
+[codecov-shield]: https://codecov.io/gh/SimonLeigh/python-rako/branch/master/graph/badge.svg
+[codecov]: https://codecov.io/gh/SimonLeigh/python-rako
+[contributors]: https://github.com/SimonLeigh/python-rako/graphs/contributors
 [marengaz]: https://github.com/marengaz
 [keepchangelog]: http://keepachangelog.com/en/1.0.0/
-[license-shield]: https://img.shields.io/github/license/marengaz/python-rako.svg
-[maintenance-shield]: https://img.shields.io/maintenance/yes/2021.svg
-[project-stage-shield]: https://img.shields.io/badge/project%20stage-experimental-yellow.svg
-[releases-shield]: https://img.shields.io/github/release/marengaz/python-rako.svg
-[releases]: https://github.com/marengaz/python-rako/releases
+[license-shield]: https://img.shields.io/github/license/SimonLeigh/python-rako.svg
+[maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg
+[project-stage-shield]: https://img.shields.io/badge/project%20stage-beta-blue.svg
+[releases-shield]: https://img.shields.io/pypi/v/python-rako-2025.svg
+[releases]: https://pypi.org/project/python-rako-2025/
 [semver]: http://semver.org/spec/v2.0.0.html
-
-[buymeacoffee-shield]: https://www.buymeacoffee.com/assets/img/guidelines/download-assets-sm-2.svg
-[buymeacoffee]: https://www.buymeacoffee.com/marengaz
-[github-actions-shield]: https://github.com/marengaz/rakomqtt/workflows/Test%20RakoMQTT/badge.svg?branch=master
-[github-actions]: https://github.com/marengaz/rakomqtt/actions?query=workflow%3A%22Test+RakoMQTT%22+branch%3Amaster

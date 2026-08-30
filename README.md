@@ -264,7 +264,11 @@ Usage:
 
 ## Authors & contributors
 
-The original setup of this repository is by [Ben Marengo][marengaz].
+Maintained by [Simon Leigh][simonleigh], who publishes this fork to PyPI as
+[`python-rako-2025`][releases].
+
+The original `python-rako` library was created by [Ben Marengo][marengaz];
+this fork builds on his work.
 
 For a full list of all authors and contributors,
 check [the contributor's page][contributors].
@@ -279,6 +283,7 @@ check [the contributor's page][contributors].
 [codecov]: https://codecov.io/gh/SimonLeigh/python-rako
 [contributors]: https://github.com/SimonLeigh/python-rako/graphs/contributors
 [marengaz]: https://github.com/marengaz
+[simonleigh]: https://github.com/SimonLeigh
 [keepchangelog]: http://keepachangelog.com/en/1.0.0/
 [license-shield]: https://img.shields.io/github/license/SimonLeigh/python-rako.svg
 [maintenance-shield]: https://img.shields.io/maintenance/yes/2026.svg

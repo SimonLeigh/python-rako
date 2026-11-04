@@ -304,12 +304,84 @@ def test_reconcile_does_not_overwrite_a_command_echo():
 def test_reconcile_leaves_rooms_absent_from_the_cache_alone():
     """Absence from the scene cache means fade-controlled, not off."""
     tracked = empty_snapshot().apply(ChannelStatusMessage(9, 1, 200))
-    fresh = BridgeStateSnapshot.from_caches(SceneCache({6: 1}), LevelCache())
+    # The real level table, as get_state_snapshot() passes it: room 9 is then
+    # listed in ``fresh`` with scene=None rather than missing from it.
+    fresh = BridgeStateSnapshot.from_caches(SceneCache({6: 1}), LEVEL_TABLE)
+    assert fresh.room_scene(9) is None
+    assert 9 in fresh.rooms
 
     reconciled = tracked.reconcile(fresh)
 
     assert reconciled.channel_level(9, 1) == 200
     assert reconciled.channel_state(9, 1).source is StateSource.LEVEL_BROADCAST
+
+
+def test_reconcile_survives_a_bridge_restart_refilling_its_cache():
+    """A restarted bridge's cache lists only the rooms used since the restart.
+
+    Observed 2026-11-03: the bridge's cache came back empty, then partly
+    refilled by occupancy-sensor rooms within minutes. That read is not empty,
+    so it passes an emptiness check, yet every other room appears with
+    scene=None. None of them changed; none of them may be wiped to unknown.
+    """
+    tracked = (
+        empty_snapshot()
+        .apply(SceneStatusMessage(6, 0, 2))
+        .apply(ChannelStatusMessage(6, 1, 129))
+        .apply(SceneStatusMessage(7, 0, 0))
+    )
+    refilling = BridgeStateSnapshot.from_caches(SceneCache({9: 1}), LEVEL_TABLE)
+
+    reconciled = tracked.reconcile(refilling)
+
+    assert reconciled.room_scene(6) == 2
+    assert reconciled.channel_level(6, 1) == 129
+    assert reconciled.channel_state(6, 1).source is StateSource.LEVEL_BROADCAST
+    assert reconciled.channel_level(6, 2) == 192
+    assert reconciled.room_scene(7) == 0
+    assert reconciled.channel_level(7, 2) == 0
+    # The room that is in the cache is still reconciled normally.
+    assert reconciled.room_scene(9) == 1
+    assert reconciled.channel_level(9, 1) == 255
+
+
+def test_reconcile_keeps_the_fade_guard_while_the_room_is_absent():
+    """The bridge drops a faded room from its cache; that must not reset the guard.
+
+    Otherwise the next read that still carries the pre-fade scene would be
+    adopted as a "missed scene change" and resurrect levels the fade invalidated.
+    """
+    tracked = (
+        empty_snapshot()
+        .apply(SceneStatusMessage(6, 0, 1))
+        .apply(FadeMessage(6, 0, direction=FadeDirection.UP, command=CommandType.FADE))
+    )
+    absent = BridgeStateSnapshot.from_caches(SceneCache({7: 1}), LEVEL_TABLE)
+
+    after_absent = tracked.reconcile(absent)
+
+    assert after_absent.rooms[6].is_faded
+    assert after_absent.rooms[6].faded_from == 1
+
+    stale = BridgeStateSnapshot.from_caches(SceneCache({6: 1}), LEVEL_TABLE)
+    reconciled = after_absent.reconcile(stale)
+
+    assert reconciled.room_scene(6) is None
+    assert reconciled.channel_level(6, 1) is None
+    assert reconciled.channel_state(6, 1).source is StateSource.UNKNOWN_AFTER_FADE
+
+
+def test_reconcile_adopts_absent_rooms_it_has_never_seen_as_unknown():
+    """A room nothing has told us about is added -- as unknown, never off."""
+    tracked = empty_snapshot().apply(SceneStatusMessage(6, 0, 1))
+    fresh = BridgeStateSnapshot.from_caches(SceneCache({6: 1}), LEVEL_TABLE)
+
+    reconciled = tracked.reconcile(fresh)
+
+    assert 9 in reconciled.rooms
+    assert reconciled.room_scene(9) is None
+    assert reconciled.channel_level(9, 1) is None
+    assert reconciled.channel_state(9, 1).source is StateSource.UNKNOWN_AFTER_FADE
 
 
 def test_reconcile_adopts_rooms_we_have_never_seen():

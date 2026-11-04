@@ -7,7 +7,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Fixed
+
+- `BridgeStateSnapshot.reconcile()` no longer wipes rooms that are missing
+  from the scene cache. `from_caches()` lists every room in the level table,
+  so a missing room arrived with `scene=None`, which `reconcile()` read as a
+  missed scene change, and reset the room and its channels to unknown. This is
+  the opposite of the documented rule that absence is not evidence. A bridge
+  that has just restarted refills its cache one scene selection at a time
+  (occupancy-sensor rooms within minutes), so the first non-empty read after a
+  restart reset every other room to unknown. Rooms missing from the cache now
+  only fill in rooms and channels nothing has reported yet. They keep a faded
+  room's `faded_from` guard, which the wipe used to discard, letting a later
+  stale cache entry bring back the pre-fade scene. The test for this rule
+  passed only because it used an empty level table; it now uses a real one.
 
 ## [0.5.0] - 2026-08-30
 

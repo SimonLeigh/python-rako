@@ -328,9 +328,16 @@ class BridgeStateSnapshot:
         Had the cache said scene 3, the scene change would have been one we
         missed, and the room would be rebuilt from the cache instead.
 
-        Rooms absent from ``fresh`` are left exactly as they are: the bridge
-        deletes fade-controlled rooms from its scene cache, so absence is not
-        evidence of anything.
+        Rooms absent from the scene cache are left exactly as they are, whether
+        they are missing from ``fresh`` altogether or -- as
+        :meth:`from_caches` lists every room in the level table -- present with
+        ``scene=None``.  Absence is not evidence of anything: the bridge
+        deletes fade-controlled rooms from its scene cache by design, and after
+        a restart its cache starts empty and refills one scene selection at a
+        time, so a read taken then lists only the rooms used since.  Treating
+        ``None`` as a scene change would wipe every other room to unknown.
+        Such a room only fills in rooms and channels we have never heard of,
+        as unknown; it never overwrites anything already tracked.
 
         **Fades get one extra guard.**  A fade sets the room's scene to
         ``None``, which would otherwise always "differ" from a cached scene and
@@ -350,6 +357,15 @@ class BridgeStateSnapshot:
             fresh_channels = {
                 rc: state for rc, state in fresh.channels.items() if rc.room_id == room
             }
+
+            if fresh_room.scene is None:
+                # Not in the scene cache: no news. Keep everything we know --
+                # including a faded room's faded_from guard -- and only fill in
+                # rooms and channels we have never heard of, as unknown.
+                rooms.setdefault(room, replace(fresh_room, updated_at=now))
+                for room_channel, state in fresh_channels.items():
+                    channels.setdefault(room_channel, replace(state, updated_at=now))
+                continue
 
             if tracked is not None and tracked.is_faded:
                 if fresh_room.scene == tracked.faded_from:

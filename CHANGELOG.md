@@ -7,7 +7,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
-Nothing yet.
+### Changed
+
+- The `tests/resources/rako3.xml` fixture is anonymised: room titles, channel
+  names and scene names are now `Room <id>`, `Channel <id>` and `Scene <id>`.
+  Ids, levels and structure are unchanged, so every test runs against the same
+  topology. The fixture ships in the sdist, so releases from this one on carry
+  only the generic names.
 
 ## [0.5.1] - 2026-11-04
 

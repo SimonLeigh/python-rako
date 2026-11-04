@@ -7,6 +7,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+Nothing yet.
+
+## [0.5.1] - 2026-11-04
+
 ### Fixed
 
 - `BridgeStateSnapshot.reconcile()` no longer wipes rooms that are missing
@@ -123,7 +127,8 @@ e.g.:
 - ...
 -->
 
-[Unreleased]: https://github.com/SimonLeigh/python-rako/compare/v0.5.0...master
+[Unreleased]: https://github.com/SimonLeigh/python-rako/compare/v0.5.1...master
+[0.5.1]: https://github.com/SimonLeigh/python-rako/compare/v0.5.0...v0.5.1
 [0.5.0]: https://github.com/SimonLeigh/python-rako/releases/tag/v0.5.0
 
 <!--
